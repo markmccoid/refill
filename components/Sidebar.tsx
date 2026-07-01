@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -17,10 +18,16 @@ export function Sidebar() {
   return (
     <aside className="w-48 bg-surface-alt border-r border-black/7 p-4 flex flex-col">
       {/* Brand */}
-      <div className="mb-6 pb-4 border-b border-black/7">
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 rounded-full bg-primary flex-shrink-0" />
-          <span className="font-bold text-sm text-text tracking-tight">Refill</span>
+      <div className="mb-1 pb-1 border-b border-black/7 ">
+        <div className="flex items-center">
+          <Image
+            src="/refill-logo.png"
+            alt="Refill"
+            width={300}
+            height={45}
+            className="rounded-md flex-shrink-0"
+          />
+          {/* <span className="font-bold text-sm text-text tracking-tight">Refill</span> */}
         </div>
       </div>
 
