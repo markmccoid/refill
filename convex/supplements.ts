@@ -1,6 +1,7 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { getConsumptionRate } from "../lib/supplement-utils";
+import { getActiveDosages } from "./consumption";
 
 const nutrientsValidator = v.array(
   v.object({
@@ -22,10 +23,8 @@ export const list = query({
 
     return await Promise.all(
       supplements.map(async (s) => {
-        const dosages = await ctx.db
-          .query("dosages")
-          .withIndex("by_supplement", (q) => q.eq("supplementId", s._id))
-          .collect();
+        // Disabled people are paused — exclude their dosages from the rate.
+        const dosages = await getActiveDosages(ctx, s._id);
         const bottles = await ctx.db
           .query("bottles")
           .withIndex("by_supplement", (q) => q.eq("supplementId", s._id))

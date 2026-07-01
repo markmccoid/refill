@@ -46,7 +46,9 @@ export function SupplementListItem({ supplement }: SupplementListItemProps) {
     { householdId: supplement.householdId }
   );
 
-  const rate = getConsumptionRate(dosages ?? []);
+  // Disabled people are paused: their dosages don't count toward the rate.
+  const activeDosages = (dosages ?? []).filter((d) => d.personActive);
+  const rate = getConsumptionRate(activeDosages);
   const anchoredAt =
     supplement.anchoredAt ?? supplement.createdAt ?? Date.now();
   const ledger = getBottleStates(supplement.bottles ?? [], anchoredAt, rate);
@@ -54,16 +56,15 @@ export function SupplementListItem({ supplement }: SupplementListItemProps) {
   const status = getSupplementStatus(daysLeft);
   const monthlySpend = getSpendRatePerDay(rate, ledger.openCostPerPill) * 30;
 
-  // Map dosages to people
-  const dosagesByPerson = dosages
-    ? dosages.map((dosage) => {
-        const person = people?.find((p) => p._id === dosage.personId);
-        return {
-          personName: person?.name || "Unknown",
-          perWeek: getDosageWeekly(dosage),
-        };
-      })
-    : [];
+  // "Taken by" summarizes active takers only (paused people are shown on the
+  // supplement detail page, not in this list row).
+  const dosagesByPerson = activeDosages.map((dosage) => {
+    const person = people?.find((p) => p._id === dosage.personId);
+    return {
+      personName: person?.name || "Unknown",
+      perWeek: getDosageWeekly(dosage),
+    };
+  });
 
   return (
     <Link

@@ -1,8 +1,11 @@
 import { query } from "./_generated/server";
 import { v } from "convex/values";
+import { Doc, Id } from "./_generated/dataModel";
 import {
   getConsumptionRate,
   getBottleStates,
+  getGroupState,
+  getGroupRate,
   getSpendRatePerDay,
   getLifetimeSpent,
   getDosageWeekly,
@@ -17,10 +20,15 @@ import {
 export const summary = query({
   args: { householdId: v.id("households") },
   async handler(ctx, { householdId }) {
-    const people = await ctx.db
-      .query("people")
-      .withIndex("by_household", (q) => q.eq("householdId", householdId))
-      .collect();
+    // Costs reflect current consumption, so disabled (paused) people are
+    // dropped entirely — their dosages neither drive the rate nor get a row.
+    const people = (
+      await ctx.db
+        .query("people")
+        .withIndex("by_household", (q) => q.eq("householdId", householdId))
+        .collect()
+    ).filter((p) => p.status !== "disabled");
+    const activePersonIds = new Set(people.map((p) => p._id));
 
     const supplements = await ctx.db
       .query("supplements")
@@ -39,11 +47,14 @@ export const summary = query({
 
     let householdLifetime = 0;
 
-    for (const s of supplements) {
-      const dosages = await ctx.db
-        .query("dosages")
-        .withIndex("by_supplement", (q) => q.eq("supplementId", s._id))
-        .collect();
+    // Ungrouped supplements: each depletes on its own (unchanged).
+    for (const s of supplements.filter((x) => !x.groupId)) {
+      const dosages = (
+        await ctx.db
+          .query("dosages")
+          .withIndex("by_supplement", (q) => q.eq("supplementId", s._id))
+          .collect()
+      ).filter((d) => activePersonIds.has(d.personId));
       const bottles = await ctx.db
         .query("bottles")
         .withIndex("by_supplement", (q) => q.eq("supplementId", s._id))
@@ -72,6 +83,75 @@ export const summary = query({
           d.personId,
           (perPersonDay.get(d.personId) ?? 0) + perDay
         );
+      }
+    }
+
+    // Groups: consumed one brand at a time, so a group counts ONCE at its pooled
+    // rate × the open (cross-brand) bottle's cost-per-pill — never per member,
+    // which would double-count spend (ADR-0004).
+    const groups = await ctx.db
+      .query("groups")
+      .withIndex("by_household", (q) => q.eq("householdId", householdId))
+      .collect();
+
+    for (const g of groups) {
+      const members = await ctx.db
+        .query("supplements")
+        .withIndex("by_group", (q) => q.eq("groupId", g._id))
+        .collect();
+
+      // Per-person weekly across members (max per person), active people only.
+      const perPersonWeekly = new Map<string, number>();
+      const memberBottles: {
+        supplementId: Id<"supplements">;
+        bottles: Doc<"bottles">[];
+      }[] = [];
+      let lifetime = 0;
+      for (const m of members) {
+        const bottles = await ctx.db
+          .query("bottles")
+          .withIndex("by_supplement", (q) => q.eq("supplementId", m._id))
+          .collect();
+        memberBottles.push({ supplementId: m._id, bottles });
+        lifetime += getLifetimeSpent(bottles);
+        const dosages = (
+          await ctx.db
+            .query("dosages")
+            .withIndex("by_supplement", (q) => q.eq("supplementId", m._id))
+            .collect()
+        ).filter((d) => activePersonIds.has(d.personId));
+        for (const d of dosages) {
+          const w = getDosageWeekly(d);
+          perPersonWeekly.set(
+            d.personId,
+            Math.max(perPersonWeekly.get(d.personId) ?? 0, w)
+          );
+        }
+      }
+
+      const rate = getGroupRate(
+        [...perPersonWeekly.entries()].map(([personId, weekly]) => ({
+          personId,
+          weekly,
+        }))
+      );
+      const { openCostPerPill } = getGroupState(
+        memberBottles,
+        g.anchoredAt,
+        rate
+      );
+
+      perSupplement.push({
+        supplementId: g._id,
+        name: g.name,
+        perMonth: getSpendRatePerDay(rate, openCostPerPill) * 30,
+        lifetime,
+      });
+      householdLifetime += lifetime;
+
+      for (const [personId, weekly] of perPersonWeekly) {
+        const perDay = getSpendRatePerDay(weekly / 7, openCostPerPill);
+        perPersonDay.set(personId, (perPersonDay.get(personId) ?? 0) + perDay);
       }
     }
 

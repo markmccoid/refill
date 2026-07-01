@@ -3,7 +3,7 @@
 import { useParams, useRouter } from "next/navigation";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { Id } from "@/convex/_generated/dataModel";
+import { Id, Doc } from "@/convex/_generated/dataModel";
 import { ImageUploader } from "@/components/ImageUploader";
 import { DsldFindDetails, type DsldLabel } from "@/components/DsldFindDetails";
 import { SupplementFactsPanel } from "@/components/SupplementFactsPanel";
@@ -16,9 +16,11 @@ import {
   getDaysLeft,
   getConsumptionRate,
   getBottleStates,
+  getGroupState,
   getSpendRatePerDay,
   getLifetimeSpent,
   getDosageWeekly,
+  type BottleState,
 } from "@/lib/supplement-utils";
 
 // --- date <-> <input type="date"> helpers (local noon avoids tz drift) -------
@@ -57,6 +59,13 @@ export default function SupplementDetailPage() {
   );
   const bottles = useQuery(
     api.bottles.listBySupplement,
+    supplement ? { supplementId } : "skip"
+  );
+  // The group this brand belongs to (null if ungrouped). When grouped, on-hand
+  // and per-bottle state come from the pooled FIFO walk, not this brand alone —
+  // so a sealed brand shows frozen instead of falsely depleting (ADR-0004).
+  const group = useQuery(
+    api.groups.getForSupplement,
     supplement ? { supplementId } : "skip"
   );
 
@@ -110,22 +119,59 @@ export default function SupplementDetailPage() {
   );
   const [newDosagePillsPerWeek, setNewDosagePillsPerWeek] = useState(7);
 
-  if (!supplement || !dosages || !people || !bottles) {
+  if (!supplement || !dosages || !people || !bottles || group === undefined) {
     return <div className="text-center py-12">Loading...</div>;
   }
 
-  // Derive live consumption, FIFO bottle states, and spend.
-  const rate = getConsumptionRate(dosages);
-  const anchoredAt = supplement.anchoredAt ?? supplement.createdAt ?? Date.now();
-  const ledger = getBottleStates(bottles, anchoredAt, rate);
-  const daysLeft = getDaysLeft(ledger.onHand, rate);
-  const status = getSupplementStatus(daysLeft);
   const lifetime = getLifetimeSpent(bottles);
-  const monthlySpend = getSpendRatePerDay(rate, ledger.openCostPerPill) * 30;
+  const anchoredAt = supplement.anchoredAt ?? supplement.createdAt ?? Date.now();
 
-  const openState = ledger.states.find((s) => s.isOpen);
-  const nonEmpty = ledger.states.filter((s) => s.remaining > 0);
-  const empty = ledger.states.filter((s) => s.remaining <= 0);
+  // Bottle states + on-hand come from the group's pooled FIFO walk when grouped
+  // (this brand's bottles are frozen unless it owns the group-open bottle), or
+  // from this brand alone otherwise. Forecast & spend are group-level when
+  // grouped, since only one brand is consumed at a time (ADR-0004).
+  let rate: number;
+  let states: BottleState<Doc<"bottles">>[];
+  let onHand: number;
+  let bottleCount: number;
+  let openRemaining: number;
+  let openCostPerPill: number;
+  let daysLeft: number;
+  let monthlySpend: number;
+
+  if (group) {
+    rate = group.consumptionRate;
+    const memberInput = group.members.map((m) => ({
+      supplementId: m.supplement._id as string,
+      bottles: m.bottles,
+    }));
+    const gl = getGroupState(memberInput, group.anchoredAt, rate);
+    states = gl.states.filter((s) => s.bottle.supplementId === supplementId);
+    onHand = Math.round(states.reduce((sum, s) => sum + s.remaining, 0));
+    const ne = states.filter((s) => s.remaining > 0);
+    bottleCount = ne.length;
+    const openHere = states.find((s) => s.isOpen);
+    openRemaining = openHere ? Math.round(openHere.remaining) : 0;
+    openCostPerPill = gl.openCostPerPill;
+    daysLeft = getDaysLeft(gl.onHand, rate); // the group's run-out
+    monthlySpend = getSpendRatePerDay(rate, gl.openCostPerPill) * 30;
+  } else {
+    rate = getConsumptionRate(dosages.filter((d) => d.personActive));
+    const ledger = getBottleStates(bottles, anchoredAt, rate);
+    states = ledger.states;
+    onHand = ledger.onHand;
+    bottleCount = ledger.bottleCount;
+    openRemaining = ledger.openRemaining;
+    openCostPerPill = ledger.openCostPerPill;
+    daysLeft = getDaysLeft(ledger.onHand, rate);
+    monthlySpend = getSpendRatePerDay(rate, ledger.openCostPerPill) * 30;
+  }
+
+  const ledger = { onHand, bottleCount, openRemaining, openCostPerPill, states };
+  const status = getSupplementStatus(daysLeft);
+  const openState = states.find((s) => s.isOpen);
+  const nonEmpty = states.filter((s) => s.remaining > 0);
+  const empty = states.filter((s) => s.remaining <= 0);
 
   // Distinct purchase links across all bottles, newest purchase first.
   const purchaseLinks = Array.from(
@@ -340,6 +386,21 @@ export default function SupplementDetailPage() {
       {error && (
         <div className="bg-critical-light border border-critical/25 text-critical px-4 py-3 rounded-lg">
           {error}
+        </div>
+      )}
+
+      {group && (
+        <div className="bg-primary-light border border-primary/25 rounded-lg px-4 py-3 text-sm flex items-center justify-between gap-3">
+          <span>
+            Part of the <strong>{group.name}</strong> group — on-hand is pooled
+            across brands; forecast &amp; dosage are managed at the group level.
+          </span>
+          <Link
+            href="/supplements"
+            className="text-primary font-medium hover:underline whitespace-nowrap"
+          >
+            View group →
+          </Link>
         </div>
       )}
 
@@ -882,25 +943,46 @@ export default function SupplementDetailPage() {
           <div className="space-y-2">
             {dosages.map((dosage) => {
               const person = people.find((p) => p._id === dosage.personId);
+              const paused = !dosage.personActive;
               return (
                 <div
                   key={dosage._id}
-                  className="flex items-center justify-between border border-black/10 rounded-lg p-3"
+                  className={`flex items-center justify-between border border-black/10 rounded-lg p-3 ${
+                    paused ? "opacity-60" : ""
+                  }`}
                 >
                   <div>
-                    <div className="font-medium">{person?.name}</div>
+                    <div className="font-medium">
+                      {person?.name}
+                      {paused && (
+                        <span className="text-xs text-text-muted font-normal">
+                          {" "}
+                          · paused (disabled)
+                        </span>
+                      )}
+                    </div>
                     <div className="text-sm text-text-muted">
                       {getDosageWeekly(dosage)} per week ·{" "}
                       {Math.round((getDosageWeekly(dosage) / 7) * 100) / 100}/day
                     </div>
                   </div>
-                  <button
-                    onClick={() => handleRemoveDosage(dosage._id)}
-                    disabled={saving}
-                    className="text-sm text-critical hover:text-critical/80 disabled:opacity-50"
-                  >
-                    Remove
-                  </button>
+                  {paused ? (
+                    <span className="text-xs text-text-muted">
+                      Re-enable in People
+                    </span>
+                  ) : group ? (
+                    <span className="text-xs text-text-muted">
+                      set in group
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => handleRemoveDosage(dosage._id)}
+                      disabled={saving}
+                      className="text-sm text-critical hover:text-critical/80 disabled:opacity-50"
+                    >
+                      Remove
+                    </button>
+                  )}
                 </div>
               );
             })}
@@ -909,7 +991,16 @@ export default function SupplementDetailPage() {
           <p className="text-sm text-text-muted">No one assigned yet.</p>
         )}
 
-        {/* Add Dosage */}
+        {/* Add Dosage — disabled for grouped brands (dosage lives on the group,
+            so editing here would create an unintended per-brand override). */}
+        {group ? (
+          <div className="border-t border-black/10 pt-4 text-sm text-text-muted">
+            Dosage for grouped brands is managed on the group.{" "}
+            <Link href="/supplements" className="text-primary hover:underline">
+              Manage group →
+            </Link>
+          </div>
+        ) : (
         <div className="border-t border-black/10 pt-4">
           {addingDosageFor ? (
             <div className="space-y-3">
@@ -940,7 +1031,11 @@ export default function SupplementDetailPage() {
           ) : (
             <div className="space-y-2">
               {people
-                .filter((p) => !usersForThisSupplement.has(p._id))
+                .filter(
+                  (p) =>
+                    p.status !== "disabled" &&
+                    !usersForThisSupplement.has(p._id)
+                )
                 .map((person) => (
                   <button
                     key={person._id}
@@ -953,6 +1048,7 @@ export default function SupplementDetailPage() {
             </div>
           )}
         </div>
+        )}
       </div>
     </div>
   );

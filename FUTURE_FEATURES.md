@@ -66,14 +66,11 @@ Route: `/supplements/:id`
 
 ## People Management
 
-### MVP Status
-Hardcoded: Mark (green) and Lori (amber) created on first load.
-
-### v2 Enhancement: UI for Adding/Editing People
-- `/people` page lists household members with avatars
-- "+ Add person" form (name, avatar color)
-- Edit person name/color
-- Delete person (cascade: remove their dosages)
+### Status: shipped
+- `/people` page: Active + Disabled sections, "+ Add person" (name + color palette), inline edit (name/color).
+- **Disable** (soft, reversible) pauses a person — dosages kept but excluded from rate/forecasts/costs. **Re-enable** restores them. **Delete** is permanent, fronted by a blast-radius confirm that offers Disable instead.
+- `person.status` is the single source of truth; disabled dosages are excluded via `getActiveDosages` (server) + the `personActive` flag on `dosages.listBySupplementId` (client). See `docs/adr/0003`.
+- Each person row expands (accordion, one open at a time) to their **regimen**: a "Taking" group with inline dosage edit/remove and a "Not taken" group to add a dosage. Disabled people expand read-only. Reuses `DosageInput` + the reanchoring `dosages.*` mutations; no schema change (`components/PersonRegimen.tsx`).
 
 ---
 

@@ -9,6 +9,7 @@ import {
   getSupplementStatus,
   getDaysLeft,
   getBottleStates,
+  getGroupState,
   getSpendRatePerDay,
 } from "@/lib/supplement-utils";
 
@@ -19,17 +20,30 @@ export default function DashboardPage() {
     api.supplements.list,
     householdId ? { householdId } : "skip"
   );
+  const groups = useQuery(
+    api.groups.list,
+    householdId ? { householdId } : "skip"
+  );
+
+  const people = useQuery(
+    api.people.list,
+    householdId ? { householdId } : "skip"
+  );
+  const activePeopleCount = (people ?? []).filter(
+    (p) => p.status !== "disabled"
+  ).length;
 
   if (!householdId) {
     return <div className="text-center py-12">Loading household...</div>;
   }
 
-  if (!supplements) {
+  if (!supplements || !groups) {
     return <div className="text-center py-12">Loading supplements...</div>;
   }
 
-  // Derive live on-hand, bottle breakdown, run-out, and spend per supplement.
-  const derived = supplements
+  // Ungrouped supplements deplete independently (unchanged).
+  const soloDerived = supplements
+    .filter((s) => !s.groupId)
     .map((s) => {
       const anchoredAt = s.anchoredAt ?? s.createdAt ?? Date.now();
       const breakdown = getBottleStates(
@@ -42,15 +56,51 @@ export default function DashboardPage() {
         getSpendRatePerDay(s.consumptionRate, breakdown.openCostPerPill) * 30;
       const capacity = (s.bottles ?? []).reduce((sum, b) => sum + b.count, 0);
       return {
-        s,
-        breakdown,
+        id: s._id as string,
+        name: s.name,
+        href: undefined as string | undefined,
+        buyHref: `/buy/${s._id}`,
+        onHand: breakdown.onHand,
         daysLeft,
         capacity,
         monthlySpend,
         status: getSupplementStatus(daysLeft),
       };
-    })
-    .sort((a, b) => a.daysLeft - b.daysLeft);
+    });
+
+  // Each group is one pooled row — consumed one brand at a time (ADR-0004).
+  const groupDerived = groups.map((g) => {
+    const memberInput = g.members.map((m) => ({
+      supplementId: m.supplement._id as string,
+      bottles: m.bottles,
+    }));
+    const ledger = getGroupState(memberInput, g.anchoredAt, g.consumptionRate);
+    const daysLeft = getDaysLeft(ledger.onHand, g.consumptionRate);
+    const monthlySpend =
+      getSpendRatePerDay(g.consumptionRate, ledger.openCostPerPill) * 30;
+    const capacity = g.members.reduce(
+      (sum, m) => sum + m.bottles.reduce((s, b) => s + b.count, 0),
+      0
+    );
+    // Link to the open brand's detail page (what's being taken now).
+    const openId = ledger.openSupplementId ?? g.members[0]?.supplement._id;
+    return {
+      id: g._id as string,
+      name: g.name,
+      href: openId ? `/supplements/${openId}` : "/supplements",
+      buyHref: openId ? `/buy/${openId}` : "/supplements",
+      onHand: ledger.onHand,
+      daysLeft,
+      capacity,
+      monthlySpend,
+      status: getSupplementStatus(daysLeft),
+    };
+  });
+
+  const derived = [...soloDerived, ...groupDerived].sort(
+    (a, b) => a.daysLeft - b.daysLeft
+  );
+  const itemCount = derived.length;
 
   const needsAttention = derived.filter((d) => d.daysLeft <= 7).length;
   const nextToRunOut = derived[0];
@@ -63,7 +113,8 @@ export default function DashboardPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
           <p className="text-text-muted text-sm mt-1">
-            {supplements.length} supplements · 2 people · tracked as of{" "}
+            {itemCount} supplements · {activePeopleCount}{" "}
+            {activePeopleCount === 1 ? "person" : "people"} · tracked as of{" "}
             {new Date().toLocaleDateString("en-US", {
               month: "short",
               day: "numeric",
@@ -82,7 +133,7 @@ export default function DashboardPage() {
             Need attention
           </div>
           <div className="text-2xl font-bold text-critical">{needsAttention}</div>
-          <div className="text-xs text-text-muted">of {supplements.length}</div>
+          <div className="text-xs text-text-muted">of {itemCount}</div>
         </div>
 
         <div className="card p-4 space-y-2">
@@ -92,7 +143,7 @@ export default function DashboardPage() {
           {nextToRunOut && (
             <>
               <div className="font-semibold text-sm leading-tight">
-                {nextToRunOut.s.name}
+                {nextToRunOut.name}
               </div>
               <div className="text-lg font-mono font-bold text-critical">
                 {isFinite(nextToRunOut.daysLeft)
@@ -120,11 +171,11 @@ export default function DashboardPage() {
           <div>
             <div className="font-semibold">
               <span className="inline-block w-2 h-2 rounded-full bg-current mr-2"></span>
-              {nextToRunOut.s.name} runs out in {nextToRunOut.daysLeft} days —
-              only {nextToRunOut.breakdown.onHand} left.
+              {nextToRunOut.name} runs out in {nextToRunOut.daysLeft} days —
+              only {nextToRunOut.onHand} left.
             </div>
           </div>
-          <Link href={`/buy/${nextToRunOut.s._id}`} className="btn-primary bg-critical hover:bg-critical/90">
+          <Link href={nextToRunOut.buyHref} className="btn-primary bg-critical hover:bg-critical/90">
             Find best price
           </Link>
         </div>
@@ -132,13 +183,14 @@ export default function DashboardPage() {
 
       {/* Run-out timeline */}
       <RunOutTimeline
-        rows={derived.map(({ s, breakdown, daysLeft, capacity, status }) => ({
-          id: s._id,
-          name: s.name,
-          onHand: breakdown.onHand,
-          capacity,
-          daysLeft,
-          status,
+        rows={derived.map((d) => ({
+          id: d.id,
+          name: d.name,
+          href: d.href,
+          onHand: d.onHand,
+          capacity: d.capacity,
+          daysLeft: d.daysLeft,
+          status: d.status,
         }))}
       />
     </div>

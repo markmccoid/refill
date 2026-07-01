@@ -510,13 +510,15 @@ export default function AddSupplementPage() {
           </div>
 
           {/* Dosages */}
-          {people && people.length > 0 && (
+          {people && people.some((p) => p.status !== "disabled") && (
             <div className="border-t border-black/10 pt-4">
               <h3 className="text-sm font-semibold mb-3">
                 Who takes this? (optional)
               </h3>
               <div className="space-y-3">
-                {people.map((person) => {
+                {people
+                  .filter((p) => p.status !== "disabled")
+                  .map((person) => {
                   const personDosage = dosages.find(
                     (d) => d.personId === person._id
                   );

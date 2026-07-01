@@ -13,6 +13,7 @@ import type * as consumption from "../consumption.js";
 import type * as costs from "../costs.js";
 import type * as dosages from "../dosages.js";
 import type * as dsld from "../dsld.js";
+import type * as groups from "../groups.js";
 import type * as households from "../households.js";
 import type * as migrations from "../migrations.js";
 import type * as people from "../people.js";
@@ -31,6 +32,7 @@ declare const fullApi: ApiFromModules<{
   costs: typeof costs;
   dosages: typeof dosages;
   dsld: typeof dsld;
+  groups: typeof groups;
   households: typeof households;
   migrations: typeof migrations;
   people: typeof people;

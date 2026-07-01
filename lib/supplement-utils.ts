@@ -149,6 +149,65 @@ export function getBottleStates<B extends BottleLike>(
   };
 }
 
+// --- Groups (ADR-0004) -------------------------------------------------------
+// A Group pools interchangeable brands into ONE sequential FIFO queue. Only the
+// open bottle depletes; every other brand's bottles freeze. Because group dosage
+// is materialised equally onto every member (see convex/groups.ts), all members
+// share one rate, so the whole group consumes at that single rate — a group is
+// getBottleStates over the pooled, cross-brand bottle list, and the open bottle's
+// owning supplement is the "open brand". Per-brand overrides (which would make the
+// rate piecewise) are deferred; see ADR-0004.
+
+export interface GroupMember<B extends BottleLike = BottleLike> {
+  supplementId: string;
+  bottles: B[];
+}
+
+export interface GroupLedgerState<B extends BottleLike = BottleLike>
+  extends LedgerState<B & { supplementId: string }> {
+  openSupplementId: string | null; // which brand's bottle is currently open
+}
+
+/**
+ * Pool every member brand's bottles into one FIFO queue and walk it oldest-first
+ * from the group's shared anchor. Identical to getBottleStates, only the queue
+ * spans brands — so on-hand, the open bottle, cost-per-pill, and which brand is
+ * open all fall out of the same drain.
+ */
+export function getGroupState<B extends BottleLike>(
+  members: GroupMember<B>[],
+  anchoredAt: number,
+  ratePerDay: number,
+  now: number = Date.now()
+): GroupLedgerState<B> {
+  const tagged = members.flatMap((m) =>
+    m.bottles.map((b) => ({ ...b, supplementId: m.supplementId }))
+  );
+  const ledger = getBottleStates(tagged, anchoredAt, ratePerDay, now);
+  const open = ledger.states.find((s) => s.isOpen);
+  return { ...ledger, openSupplementId: open ? open.bottle.supplementId : null };
+}
+
+/**
+ * A group's consumption rate. Because only one brand is open at a time and group
+ * dosage is materialised equally across members, the group consumes at a SINGLE
+ * member's rate — NOT the sum of members. Computed as the per-person union of
+ * weekly amounts (max per person, so a member momentarily missing a dosage row
+ * can't zero someone out) ÷ 7. Correct only while no per-brand override exists
+ * (overrides ⇒ piecewise rate, deferred — ADR-0004).
+ */
+export function getGroupRate(
+  memberDosages: { personId: string; weekly: number }[]
+): number {
+  const perPerson = new Map<string, number>();
+  for (const d of memberDosages) {
+    perPerson.set(d.personId, Math.max(perPerson.get(d.personId) ?? 0, d.weekly));
+  }
+  let weekly = 0;
+  for (const w of perPerson.values()) weekly += w;
+  return weekly / 7;
+}
+
 /** Cost of consumption per day = pills/day × open bottle's cost/pill. */
 export function getSpendRatePerDay(
   ratePerDay: number,

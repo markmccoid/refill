@@ -12,6 +12,7 @@ export interface TimelineRow {
   capacity: number; // "of N" — the anchor / starting count for context
   daysLeft: number; // Infinity if nobody takes it
   status: SupplementStatus;
+  href?: string; // link target; defaults to the supplement detail page
 }
 
 // Three visual buckets for the legend (stocked folds into "on track").
@@ -115,7 +116,7 @@ export function RunOutTimeline({ rows }: { rows: TimelineRow[] }) {
             >
               <div className="pr-4">
                 <Link
-                  href={`/supplements/${r.id}`}
+                  href={r.href ?? `/supplements/${r.id}`}
                   className="font-bold text-base hover:text-primary transition-colors"
                 >
                   {r.name}

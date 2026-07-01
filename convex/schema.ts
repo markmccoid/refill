@@ -11,12 +11,33 @@ export default defineSchema({
     householdId: v.id("households"),
     name: v.string(),
     color: v.string(), // e.g., "green", "amber"
+    // Lifecycle: missing => active (no migration for pre-existing rows).
+    // Disabled people are paused — their dosages are kept but excluded from
+    // consumption rate, forecasts, and costs. person.status is the single
+    // source of truth. See docs/adr/0003.
+    status: v.optional(v.union(v.literal("active"), v.literal("disabled"))),
+    disabledAt: v.optional(v.number()), // ms; set when disabled, cleared on re-enable
+  })
+    .index("by_household", ["householdId"]),
+
+  // An interchangeable set of supplement brands consumed one at a time in a
+  // single pooled FIFO queue (ADR-0004). Owns the shared anchor clock; member
+  // supplements' own anchoredAt/quantityAnchor become caches while grouped.
+  groups: defineTable({
+    householdId: v.id("households"),
+    name: v.string(), // the role, e.g. "Fish Oil" — no member brand carries it
+    category: v.optional(v.string()),
+    anchoredAt: v.number(), // shared clock for the pooled consumption walk
+    createdAt: v.number(),
   })
     .index("by_household", ["householdId"]),
 
   supplements: defineTable({
     householdId: v.id("households"),
     name: v.string(),
+    // When set, this supplement is one brand within a Group (ADR-0004): its
+    // stock deplete via the group's pooled FIFO queue, not on its own.
+    groupId: v.optional(v.id("groups")),
     brand: v.optional(v.string()),
     form: v.optional(v.string()), // e.g., "Softgel", "Tablet"
     servingSize: v.optional(v.string()), // e.g., "1 softgel"
@@ -40,7 +61,8 @@ export default defineSchema({
     purchaseUrl: v.optional(v.string()), // legacy: purchase link now lives per-bottle
     createdAt: v.number(),
   })
-    .index("by_household", ["householdId"]),
+    .index("by_household", ["householdId"])
+    .index("by_group", ["groupId"]),
 
   // A physical bottle purchase. FIFO ledger backing on-hand + cost (ADR-0002).
   bottles: defineTable({

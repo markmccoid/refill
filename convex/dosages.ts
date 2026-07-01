@@ -1,14 +1,23 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
-import { reanchorSupplement } from "./consumption";
+import { reanchorFor } from "./consumption";
 
 export const listBySupplementId = query({
   args: { supplementId: v.id("supplements") },
   async handler(ctx, { supplementId }) {
-    return await ctx.db
+    // Tag each dosage with whether its person is active. Disabled people's
+    // dosages are still returned (so the detail page can show them as paused)
+    // but personActive lets callers exclude them from the consumption rate.
+    const dosages = await ctx.db
       .query("dosages")
       .withIndex("by_supplement", (q) => q.eq("supplementId", supplementId))
       .collect();
+    return await Promise.all(
+      dosages.map(async (d) => {
+        const person = await ctx.db.get(d.personId);
+        return { ...d, personActive: !!person && person.status !== "disabled" };
+      })
+    );
   },
 });
 
@@ -30,7 +39,7 @@ export const create = mutation({
   },
   async handler(ctx, args) {
     // Re-anchor first: freeze on-hand at the old rate before the rate changes.
-    await reanchorSupplement(ctx, args.supplementId);
+    await reanchorFor(ctx, args.supplementId);
     return await ctx.db.insert("dosages", args);
   },
 });
@@ -43,7 +52,7 @@ export const update = mutation({
   async handler(ctx, { id, ...updates }) {
     const dosage = await ctx.db.get(id);
     if (!dosage) return null;
-    await reanchorSupplement(ctx, dosage.supplementId);
+    await reanchorFor(ctx, dosage.supplementId);
     await ctx.db.patch(id, updates);
     return await ctx.db.get(id);
   },
@@ -54,7 +63,7 @@ export const remove = mutation({
   async handler(ctx, { id }) {
     const dosage = await ctx.db.get(id);
     if (!dosage) return;
-    await reanchorSupplement(ctx, dosage.supplementId);
+    await reanchorFor(ctx, dosage.supplementId);
     await ctx.db.delete(id);
   },
 });

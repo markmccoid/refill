@@ -7,8 +7,20 @@ A household supplement-inventory tracker: what supplements people take, how much
 ### Inventory
 
 **Supplement**:
-A distinct product a household stocks (e.g. "B-Right" by Jarrow). One entry, regardless of how many physical bottles are on hand.
+A distinct product a household stocks (e.g. "B-Right" by Jarrow). One entry, regardless of how many physical bottles are on hand. May belong to a **Group** when it's one interchangeable brand of a broader role.
 _Avoid_: pill, vitamin (those are kinds of supplements, not the entry)
+
+**Group**:
+An interchangeable set of Supplements (brands) that fill the same role — e.g. "Fish Oil" spanning Brand A and Brand B. Consumed **one brand at a time in sequence**; owns the combined run-out forecast, cost roll-up, per-person dosage, and the anchor clock. A Supplement belongs to at most one Group. Carries its own **user-set name** (the role — no brand carries it) and an optional **category**; its dashboard image is the **currently-open brand's image** (so it reflects what's being taken now and changes at each rollover). Holds **at least two members** — it forms by linking ≥2 brands, and **auto-dissolves** back to a solo Supplement when unlinked down to one. Membership changes (link / unlink) are re-anchor events.
+_Avoid_: stack (means *different* supplements taken together — the opposite), bundle, category (that's a field on the group, not a synonym), regimen (that's a person's whole set of supplements)
+
+**Group queue** / **Consumption order**:
+The single ordered list of every bottle across a Group's brands, drained **oldest-purchase-first** (pooled FIFO) with the currently-open bottle pinned to the front. A newly added bottle lands by its purchase date (newest at the back), so a new bottle of an earlier brand still waits behind bottles bought before it. The order can be manually overridden when real-world intent differs from purchase dates.
+_Avoid_: sequence (unqualified), priority
+
+**Group dosage** / **Per-brand override**:
+Dosage is set once per person on the **Group** (pills per week) and inherited by every brand in it. A brand may carry an optional **override** for the rare case where its pill count differs (e.g. a half-strength brand needs two pills instead of one). With no overrides present, the Group depletes at one constant rate; an override makes the Group's rate **piecewise** — it changes as the queue rolls from one brand to the next.
+_Avoid_: setting dosage per brand by default
 
 **Bottle**:
 One physical container of a supplement, recorded as its own row with a **count** and a **bottle price**. A supplement owns an ordered list of bottles (oldest first). Adding a bottle = logging a purchase.

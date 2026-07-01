@@ -1,7 +1,7 @@
 import { mutation, query, MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
-import { reanchorSupplement } from "./consumption";
+import { reanchorFor } from "./consumption";
 
 /** Resync the supplement's quantityAnchor cache = Σ bottle.remainingAtAnchor. */
 async function syncAnchorCache(
@@ -40,7 +40,7 @@ export const add = mutation({
   },
   async handler(ctx, { supplementId, count, price, purchaseUrl, purchasedAt }) {
     // Freeze existing bottles' remaining at the current rate before adding.
-    await reanchorSupplement(ctx, supplementId);
+    await reanchorFor(ctx, supplementId);
     const id = await ctx.db.insert("bottles", {
       supplementId,
       count,
@@ -73,7 +73,7 @@ export const update = mutation({
 
     const structural = count !== undefined || purchasedAt !== undefined;
     if (structural) {
-      await reanchorSupplement(ctx, bottle.supplementId);
+      await reanchorFor(ctx, bottle.supplementId);
     }
     // Re-read: re-anchor may have changed remainingAtAnchor.
     const current = await ctx.db.get(id);
@@ -100,7 +100,7 @@ export const remove = mutation({
   async handler(ctx, { id }) {
     const bottle = await ctx.db.get(id);
     if (!bottle) return;
-    await reanchorSupplement(ctx, bottle.supplementId);
+    await reanchorFor(ctx, bottle.supplementId);
     await ctx.db.delete(id);
     await syncAnchorCache(ctx, bottle.supplementId);
   },
@@ -118,7 +118,7 @@ export const recount = mutation({
   async handler(ctx, { id, remaining }) {
     const bottle = await ctx.db.get(id);
     if (!bottle) return null;
-    await reanchorSupplement(ctx, bottle.supplementId);
+    await reanchorFor(ctx, bottle.supplementId);
     const current = await ctx.db.get(id);
     if (!current) return null;
     await ctx.db.patch(id, {
