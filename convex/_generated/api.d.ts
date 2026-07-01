@@ -8,6 +8,8 @@
  * @module
  */
 
+import type * as auth from "../auth.js";
+import type * as authz from "../authz.js";
 import type * as bottles from "../bottles.js";
 import type * as consumption from "../consumption.js";
 import type * as costs from "../costs.js";
@@ -15,6 +17,7 @@ import type * as dosages from "../dosages.js";
 import type * as dsld from "../dsld.js";
 import type * as groups from "../groups.js";
 import type * as households from "../households.js";
+import type * as http from "../http.js";
 import type * as migrations from "../migrations.js";
 import type * as people from "../people.js";
 import type * as supplementFacts from "../supplementFacts.js";
@@ -27,6 +30,8 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  auth: typeof auth;
+  authz: typeof authz;
   bottles: typeof bottles;
   consumption: typeof consumption;
   costs: typeof costs;
@@ -34,6 +39,7 @@ declare const fullApi: ApiFromModules<{
   dsld: typeof dsld;
   groups: typeof groups;
   households: typeof households;
+  http: typeof http;
   migrations: typeof migrations;
   people: typeof people;
   supplementFacts: typeof supplementFacts;

@@ -4,13 +4,13 @@ import { useState } from "react";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import Link from "next/link";
-import { useDemoHousehold } from "@/hooks/useDemoHousehold";
+import { useHousehold } from "@/hooks/useHousehold";
 import { SupplementListItem } from "@/components/SupplementListItem";
 import { GroupListItem } from "@/components/GroupListItem";
 import { CreateGroupDialog } from "@/components/CreateGroupDialog";
 
 export default function SupplementsPage() {
-  const householdId = useDemoHousehold();
+  const householdId = useHousehold();
   const supplements = useQuery(
     api.supplements.list,
     householdId ? { householdId } : "skip"

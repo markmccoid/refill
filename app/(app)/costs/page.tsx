@@ -2,12 +2,12 @@
 
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { useDemoHousehold } from "@/hooks/useDemoHousehold";
+import { useHousehold } from "@/hooks/useHousehold";
 
 const money = (n: number) => `$${n.toFixed(2)}`;
 
 export default function CostsPage() {
-  const householdId = useDemoHousehold();
+  const householdId = useHousehold();
   const summary = useQuery(
     api.costs.summary,
     householdId ? { householdId } : "skip"

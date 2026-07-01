@@ -11,6 +11,8 @@
     "convex:codegen": "convex codegen"
   },
   "dependencies": {
+    "@auth/core": "^0.41.1",
+    "@convex-dev/auth": "^0.0.94",
     "convex": "latest",
     "next": "latest",
     "puppeteer": "^25.2.1",

@@ -1,11 +1,27 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import { authTables } from "@convex-dev/auth/server";
 
 export default defineSchema({
+  // Convex Auth tables (users, authAccounts, authSessions, …). Identity now
+  // comes from a real signed-in user, not a localStorage demo id.
+  ...authTables,
+
   households: defineTable({
     name: v.string(),
     createdAt: v.number(),
   }),
+
+  // Links users to households (many-to-many, multi-tenant ready). Today each
+  // user has exactly one "owner" row; sharing later = insert a "member" row.
+  householdMembers: defineTable({
+    userId: v.id("users"),
+    householdId: v.id("households"),
+    role: v.union(v.literal("owner"), v.literal("member")),
+    createdAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_household", ["householdId"]),
 
   people: defineTable({
     householdId: v.id("households"),

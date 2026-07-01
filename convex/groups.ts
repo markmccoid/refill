@@ -7,6 +7,11 @@ import {
   getActiveDosages,
 } from "./consumption";
 import { getDosageWeekly, getGroupRate } from "../lib/supplement-utils";
+import {
+  requireMembership,
+  requireGroupAccess,
+  requireSupplementAccess,
+} from "./authz";
 
 /**
  * Assemble a group's client view: its member brands, each brand's bottles, the
@@ -130,9 +135,12 @@ export const create = mutation({
     ),
   },
   async handler(ctx, { householdId, name, category, supplementIds, dosages }) {
+    await requireMembership(ctx, householdId);
     if (supplementIds.length < 2) {
       throw new Error("A group needs at least two supplements.");
     }
+    // Every brand being pooled must belong to this household.
+    for (const id of supplementIds) await requireSupplementAccess(ctx, id);
     // Freeze each member solo (at its own rate) up to now before pooling.
     for (const id of supplementIds) await reanchorSupplement(ctx, id);
 
@@ -161,7 +169,8 @@ export const create = mutation({
 export const addMember = mutation({
   args: { groupId: v.id("groups"), supplementId: v.id("supplements") },
   async handler(ctx, { groupId, supplementId }) {
-    const group = await ctx.db.get(groupId);
+    const group = await requireGroupAccess(ctx, groupId);
+    await requireSupplementAccess(ctx, supplementId);
     if (!group) throw new Error("Group not found.");
 
     await reanchorGroup(ctx, groupId);
@@ -188,7 +197,7 @@ export const addMember = mutation({
 export const removeMember = mutation({
   args: { supplementId: v.id("supplements") },
   async handler(ctx, { supplementId }) {
-    const supplement = await ctx.db.get(supplementId);
+    const supplement = await requireSupplementAccess(ctx, supplementId);
     if (!supplement || !supplement.groupId) return;
     const groupId = supplement.groupId;
 
@@ -218,6 +227,7 @@ export const setDosage = mutation({
     pillsPerWeek: v.number(),
   },
   async handler(ctx, { groupId, personId, pillsPerWeek }) {
+    await requireGroupAccess(ctx, groupId);
     await reanchorGroup(ctx, groupId);
     const members = await groupMembers(ctx, groupId);
     for (const m of members) {
@@ -249,6 +259,7 @@ export const update = mutation({
     category: v.optional(v.string()),
   },
   async handler(ctx, { id, ...updates }) {
+    await requireGroupAccess(ctx, id);
     await ctx.db.patch(id, updates);
     return await ctx.db.get(id);
   },
@@ -262,6 +273,7 @@ export const update = mutation({
 export const list = query({
   args: { householdId: v.id("households") },
   async handler(ctx, { householdId }) {
+    await requireMembership(ctx, householdId);
     const groups = await ctx.db
       .query("groups")
       .withIndex("by_household", (q) => q.eq("householdId", householdId))
@@ -278,7 +290,7 @@ export const list = query({
 export const getForSupplement = query({
   args: { supplementId: v.id("supplements") },
   async handler(ctx, { supplementId }) {
-    const supplement = await ctx.db.get(supplementId);
+    const supplement = await requireSupplementAccess(ctx, supplementId);
     if (!supplement || !supplement.groupId) return null;
     const group = await ctx.db.get(supplement.groupId);
     if (!group) return null;

@@ -2,7 +2,11 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useQuery } from "convex/react";
+import { useAuthActions } from "@convex-dev/auth/react";
+import { api } from "@/convex/_generated/api";
+import { useHousehold } from "@/hooks/useHousehold";
 
 const nav = [
   { label: "Dashboard", href: "/dashboard" },
@@ -12,8 +16,25 @@ const nav = [
   { label: "Buy", href: "/buy" },
 ];
 
+const AVATAR_GRADIENTS: Record<string, string> = {
+  green: "from-primary to-primary-dark",
+  amber: "from-amber-400 to-amber-600",
+};
+
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+  const { signOut } = useAuthActions();
+  const householdId = useHousehold();
+  const people = useQuery(
+    api.people.list,
+    householdId ? { householdId } : "skip"
+  );
+
+  const handleSignOut = async () => {
+    await signOut();
+    router.push("/signin");
+  };
 
   return (
     <aside className="w-48 bg-surface-alt border-r border-black/7 p-4 flex flex-col">
@@ -27,7 +48,6 @@ export function Sidebar() {
             height={45}
             className="rounded-md flex-shrink-0"
           />
-          {/* <span className="font-bold text-sm text-text tracking-tight">Refill</span> */}
         </div>
       </div>
 
@@ -56,22 +76,29 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* User Avatars */}
-      <div className="pt-4 border-t border-black/7 flex items-center gap-2">
-        {/* Mark - Green */}
-        <div
-          className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-primary-dark flex items-center justify-center text-white text-xs font-bold shadow-sm"
-          title="Mark"
+      {/* People + sign out */}
+      <div className="pt-4 border-t border-black/7 space-y-3">
+        {people && people.length > 0 && (
+          <div className="flex items-center gap-2">
+            {people.map((p) => (
+              <div
+                key={p._id}
+                className={`w-8 h-8 rounded-full bg-gradient-to-br ${
+                  AVATAR_GRADIENTS[p.color] ?? "from-slate-400 to-slate-600"
+                } flex items-center justify-center text-white text-xs font-bold shadow-sm`}
+                title={p.name}
+              >
+                {p.name.charAt(0).toUpperCase()}
+              </div>
+            ))}
+          </div>
+        )}
+        <button
+          onClick={handleSignOut}
+          className="w-full text-left text-xs font-medium text-text-muted hover:text-text transition-colors"
         >
-          M
-        </div>
-        {/* Lori - Amber */}
-        <div
-          className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center text-white text-xs font-bold shadow-sm"
-          title="Lori"
-        >
-          L
-        </div>
+          Sign out
+        </button>
       </div>
     </aside>
   );

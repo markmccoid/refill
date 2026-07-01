@@ -2,6 +2,7 @@ import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { getConsumptionRate } from "../lib/supplement-utils";
 import { getActiveDosages } from "./consumption";
+import { requireMembership, requireSupplementAccess } from "./authz";
 
 const nutrientsValidator = v.array(
   v.object({
@@ -16,6 +17,7 @@ const nutrientsValidator = v.array(
 export const list = query({
   args: { householdId: v.id("households") },
   async handler(ctx, { householdId }) {
+    await requireMembership(ctx, householdId);
     const supplements = await ctx.db
       .query("supplements")
       .withIndex("by_household", (q) => q.eq("householdId", householdId))
@@ -42,7 +44,7 @@ export const list = query({
 export const get = query({
   args: { id: v.id("supplements") },
   async handler(ctx, { id }) {
-    return await ctx.db.get(id);
+    return await requireSupplementAccess(ctx, id);
   },
 });
 
@@ -72,6 +74,7 @@ export const create = mutation({
     ),
   },
   async handler(ctx, args) {
+    await requireMembership(ctx, args.householdId);
     const { bottles, ...supplementFields } = args;
     const now = Date.now();
 
@@ -115,6 +118,7 @@ export const update = mutation({
     imageUrl: v.optional(v.string()),
   },
   async handler(ctx, { id, ...updates }) {
+    await requireSupplementAccess(ctx, id);
     await ctx.db.patch(id, updates);
     return await ctx.db.get(id);
   },
@@ -123,6 +127,7 @@ export const update = mutation({
 export const remove = mutation({
   args: { id: v.id("supplements") },
   async handler(ctx, { id }) {
+    await requireSupplementAccess(ctx, id);
     // Cascade: DSLD facts (+ stored assets) and dosages.
     const facts = await ctx.db
       .query("supplementFacts")

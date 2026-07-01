@@ -3,7 +3,7 @@
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import Link from "next/link";
-import { useDemoHousehold } from "@/hooks/useDemoHousehold";
+import { useHousehold } from "@/hooks/useHousehold";
 import { RunOutTimeline } from "@/components/RunOutTimeline";
 import {
   getSupplementStatus,
@@ -14,7 +14,7 @@ import {
 } from "@/lib/supplement-utils";
 
 export default function DashboardPage() {
-  const householdId = useDemoHousehold();
+  const householdId = useHousehold();
 
   const supplements = useQuery(
     api.supplements.list,

@@ -2,10 +2,12 @@ import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { reanchorSupplement } from "./consumption";
 import { getDosageWeekly } from "../lib/supplement-utils";
+import { requireMembership, requirePersonAccess } from "./authz";
 
 export const list = query({
   args: { householdId: v.id("households") },
   async handler(ctx, { householdId }) {
+    await requireMembership(ctx, householdId);
     // Returns everyone (active + disabled). Callers split by status; missing
     // status means active (pre-lifecycle rows).
     return await ctx.db
@@ -22,6 +24,7 @@ export const create = mutation({
     color: v.string(),
   },
   async handler(ctx, { householdId, name, color }) {
+    await requireMembership(ctx, householdId);
     return await ctx.db.insert("people", {
       householdId,
       name,
@@ -38,6 +41,7 @@ export const update = mutation({
     color: v.optional(v.string()),
   },
   async handler(ctx, { id, ...updates }) {
+    await requirePersonAccess(ctx, id);
     await ctx.db.patch(id, updates);
     return await ctx.db.get(id);
   },
@@ -50,6 +54,7 @@ export const update = mutation({
 export const impact = query({
   args: { id: v.id("people") },
   async handler(ctx, { id }) {
+    await requirePersonAccess(ctx, id);
     const dosages = await ctx.db
       .query("dosages")
       .withIndex("by_person", (q) => q.eq("personId", id))
@@ -76,6 +81,7 @@ export const impact = query({
 export const disable = mutation({
   args: { id: v.id("people") },
   async handler(ctx, { id }) {
+    await requirePersonAccess(ctx, id);
     const person = await ctx.db.get(id);
     if (!person || person.status === "disabled") return;
 
@@ -98,6 +104,7 @@ export const disable = mutation({
 export const enable = mutation({
   args: { id: v.id("people") },
   async handler(ctx, { id }) {
+    await requirePersonAccess(ctx, id);
     const person = await ctx.db.get(id);
     if (!person || person.status !== "disabled") return;
 
@@ -122,6 +129,7 @@ export const enable = mutation({
 export const remove = mutation({
   args: { id: v.id("people") },
   async handler(ctx, { id }) {
+    await requirePersonAccess(ctx, id);
     const person = await ctx.db.get(id);
     if (!person) return;
 

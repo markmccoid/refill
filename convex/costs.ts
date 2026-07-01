@@ -10,6 +10,7 @@ import {
   getLifetimeSpent,
   getDosageWeekly,
 } from "../lib/supplement-utils";
+import { requireMembership } from "./authz";
 
 /**
  * Household spend summary (ADR-0002): a current-rate snapshot per person
@@ -20,6 +21,7 @@ import {
 export const summary = query({
   args: { householdId: v.id("households") },
   async handler(ctx, { householdId }) {
+    await requireMembership(ctx, householdId);
     // Costs reflect current consumption, so disabled (paused) people are
     // dropped entirely — their dosages neither drive the rate nor get a row.
     const people = (

@@ -2,6 +2,7 @@ import { mutation, query, MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
 import { reanchorFor } from "./consumption";
+import { requireSupplementAccess } from "./authz";
 
 /** Resync the supplement's quantityAnchor cache = Σ bottle.remainingAtAnchor. */
 async function syncAnchorCache(
@@ -19,6 +20,7 @@ async function syncAnchorCache(
 export const listBySupplement = query({
   args: { supplementId: v.id("supplements") },
   async handler(ctx, { supplementId }) {
+    await requireSupplementAccess(ctx, supplementId);
     return await ctx.db
       .query("bottles")
       .withIndex("by_supplement", (q) => q.eq("supplementId", supplementId))
@@ -39,6 +41,7 @@ export const add = mutation({
     purchasedAt: v.optional(v.number()),
   },
   async handler(ctx, { supplementId, count, price, purchaseUrl, purchasedAt }) {
+    await requireSupplementAccess(ctx, supplementId);
     // Freeze existing bottles' remaining at the current rate before adding.
     await reanchorFor(ctx, supplementId);
     const id = await ctx.db.insert("bottles", {
@@ -70,6 +73,7 @@ export const update = mutation({
   async handler(ctx, { id, count, price, purchaseUrl, purchasedAt }) {
     const bottle = await ctx.db.get(id);
     if (!bottle) return null;
+    await requireSupplementAccess(ctx, bottle.supplementId);
 
     const structural = count !== undefined || purchasedAt !== undefined;
     if (structural) {
@@ -100,6 +104,7 @@ export const remove = mutation({
   async handler(ctx, { id }) {
     const bottle = await ctx.db.get(id);
     if (!bottle) return;
+    await requireSupplementAccess(ctx, bottle.supplementId);
     await reanchorFor(ctx, bottle.supplementId);
     await ctx.db.delete(id);
     await syncAnchorCache(ctx, bottle.supplementId);
@@ -118,6 +123,7 @@ export const recount = mutation({
   async handler(ctx, { id, remaining }) {
     const bottle = await ctx.db.get(id);
     if (!bottle) return null;
+    await requireSupplementAccess(ctx, bottle.supplementId);
     await reanchorFor(ctx, bottle.supplementId);
     const current = await ctx.db.get(id);
     if (!current) return null;

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { useDemoHousehold } from "@/hooks/useDemoHousehold";
+import { useHousehold } from "@/hooks/useHousehold";
 import { ImageUploader } from "@/components/ImageUploader";
 import { DsldFindDetails, type DsldLabel } from "@/components/DsldFindDetails";
 import { DosageInput } from "@/components/DosageInput";
@@ -52,7 +52,7 @@ const emptyBottleDraft = (count: number): BottleFieldsValue => ({
 
 export default function AddSupplementPage() {
   const router = useRouter();
-  const householdId = useDemoHousehold();
+  const householdId = useHousehold();
   const people = useQuery(
     api.people.list,
     householdId ? { householdId } : "skip"

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
-import { useDemoHousehold } from "@/hooks/useDemoHousehold";
+import { useHousehold } from "@/hooks/useHousehold";
 import { PERSON_COLORS, colorValue } from "@/lib/person-colors";
 import { PersonRegimen } from "@/components/PersonRegimen";
 
@@ -43,7 +43,7 @@ function ColorPicker({
 }
 
 export default function PeoplePage() {
-  const householdId = useDemoHousehold();
+  const householdId = useHousehold();
   const people = useQuery(
     api.people.list,
     householdId ? { householdId } : "skip"
