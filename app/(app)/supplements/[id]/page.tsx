@@ -1,0 +1,959 @@
+"use client";
+
+import { useParams, useRouter } from "next/navigation";
+import { useQuery, useMutation, useAction } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import { Id } from "@/convex/_generated/dataModel";
+import { ImageUploader } from "@/components/ImageUploader";
+import { DsldFindDetails, type DsldLabel } from "@/components/DsldFindDetails";
+import { SupplementFactsPanel } from "@/components/SupplementFactsPanel";
+import { DosageInput } from "@/components/DosageInput";
+import { BottleFields } from "@/components/BottleFields";
+import Link from "next/link";
+import { useState } from "react";
+import {
+  getSupplementStatus,
+  getDaysLeft,
+  getConsumptionRate,
+  getBottleStates,
+  getSpendRatePerDay,
+  getLifetimeSpent,
+  getDosageWeekly,
+} from "@/lib/supplement-utils";
+
+// --- date <-> <input type="date"> helpers (local noon avoids tz drift) -------
+function toDateInput(ms: number): string {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+    d.getDate()
+  ).padStart(2, "0")}`;
+}
+function fromDateInput(s: string): number {
+  const [y, m, d] = s.split("-").map(Number);
+  return new Date(y, m - 1, d, 12, 0, 0).getTime();
+}
+/** Short store label for a purchase link, e.g. "amazon.com". */
+function storeLabel(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+}
+
+export default function SupplementDetailPage() {
+  const params = useParams();
+  const router = useRouter();
+  const supplementId = params.id as Id<"supplements">;
+
+  const supplement = useQuery(api.supplements.get, { id: supplementId });
+  const dosages = useQuery(
+    api.dosages.listBySupplementId,
+    supplement ? { supplementId } : "skip"
+  );
+  const people = useQuery(
+    api.people.list,
+    supplement ? { householdId: supplement.householdId } : "skip"
+  );
+  const bottles = useQuery(
+    api.bottles.listBySupplement,
+    supplement ? { supplementId } : "skip"
+  );
+
+  const updateSupplement = useMutation(api.supplements.update);
+  const removeSupplement = useMutation(api.supplements.remove);
+  const createDosage = useMutation(api.dosages.create);
+  const removeDosage = useMutation(api.dosages.remove);
+  const addBottle = useMutation(api.bottles.add);
+  const updateBottle = useMutation(api.bottles.update);
+  const removeBottle = useMutation(api.bottles.remove);
+  const recountBottle = useMutation(api.bottles.recount);
+  const importFacts = useAction(api.dsld.importFacts);
+
+  const [isEditing, setIsEditing] = useState(false);
+  const [pendingDsldId, setPendingDsldId] = useState<string | null>(null);
+  const [pendingNutrients, setPendingNutrients] = useState<
+    { name: string; amount: number; unit: string }[] | null
+  >(null);
+  const [editData, setEditData] = useState({
+    name: "",
+    brand: "",
+    form: "",
+    servingSize: "",
+    category: "",
+    jarSize: 0,
+    imageUrl: "",
+  });
+
+  // Bottle add / edit form state.
+  const [addingBottle, setAddingBottle] = useState(false);
+  const [newBottle, setNewBottle] = useState({
+    count: 0,
+    price: 0,
+    purchaseUrl: "",
+    purchasedAt: toDateInput(Date.now()),
+  });
+  const [editingBottleId, setEditingBottleId] =
+    useState<Id<"bottles"> | null>(null);
+  const [editBottle, setEditBottle] = useState({
+    count: 0,
+    price: 0,
+    purchaseUrl: "",
+    purchasedAt: toDateInput(Date.now()),
+    remaining: 0,
+  });
+
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [addingDosageFor, setAddingDosageFor] = useState<Id<"people"> | null>(
+    null
+  );
+  const [newDosagePillsPerWeek, setNewDosagePillsPerWeek] = useState(7);
+
+  if (!supplement || !dosages || !people || !bottles) {
+    return <div className="text-center py-12">Loading...</div>;
+  }
+
+  // Derive live consumption, FIFO bottle states, and spend.
+  const rate = getConsumptionRate(dosages);
+  const anchoredAt = supplement.anchoredAt ?? supplement.createdAt ?? Date.now();
+  const ledger = getBottleStates(bottles, anchoredAt, rate);
+  const daysLeft = getDaysLeft(ledger.onHand, rate);
+  const status = getSupplementStatus(daysLeft);
+  const lifetime = getLifetimeSpent(bottles);
+  const monthlySpend = getSpendRatePerDay(rate, ledger.openCostPerPill) * 30;
+
+  const openState = ledger.states.find((s) => s.isOpen);
+  const nonEmpty = ledger.states.filter((s) => s.remaining > 0);
+  const empty = ledger.states.filter((s) => s.remaining <= 0);
+
+  // Distinct purchase links across all bottles, newest purchase first.
+  const purchaseLinks = Array.from(
+    new Set(
+      [...bottles]
+        .sort((a, b) => b.purchasedAt - a.purchasedAt)
+        .map((b) => b.purchaseUrl)
+        .filter((u): u is string => !!u)
+    )
+  );
+
+  // Fill identity/label fields from a chosen DSLD product (inventory untouched).
+  const applyDsldLabel = (label: DsldLabel) => {
+    setPendingDsldId(label.dsldId);
+    setPendingNutrients(label.nutrientHighlights);
+    setError("");
+    setEditData((prev) => ({
+      ...prev,
+      name: label.fullName || prev.name,
+      brand: label.brandName ?? "",
+      form: label.form ?? "",
+      servingSize: label.servingSize ?? "",
+      category: label.category ?? "",
+    }));
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editData.name.trim()) {
+      setError("Name is required");
+      return;
+    }
+    if (editData.jarSize <= 0) {
+      setError("Default bottle size must be greater than 0");
+      return;
+    }
+
+    setSaving(true);
+    setError("");
+    try {
+      await updateSupplement({
+        id: supplementId,
+        name: editData.name,
+        brand: editData.brand || undefined,
+        form: editData.form || undefined,
+        servingSize: editData.servingSize || undefined,
+        category: editData.category || undefined,
+        nutrients: pendingNutrients ?? undefined,
+        jarSize: editData.jarSize,
+        imageUrl: editData.imageUrl || undefined,
+      });
+
+      // Attach/refresh DSLD facts + label images if a product was picked.
+      if (pendingDsldId) {
+        try {
+          await importFacts({ supplementId, dsldId: pendingDsldId });
+        } catch (err) {
+          console.error("Failed to import DSLD facts:", err);
+        }
+      }
+
+      setPendingDsldId(null);
+      setPendingNutrients(null);
+      setIsEditing(false);
+    } catch (err) {
+      console.error("Failed to update:", err);
+      setError("Failed to save changes");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!confirm(`Delete "${supplement.name}"? This cannot be undone.`)) {
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      await removeSupplement({ id: supplementId });
+      router.push("/supplements");
+    } catch (err) {
+      console.error("Failed to delete:", err);
+      setError("Failed to delete supplement");
+      setSaving(false);
+    }
+  };
+
+  const handleAddBottle = async () => {
+    if (newBottle.count <= 0) {
+      setError("Bottle count must be greater than 0");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      await addBottle({
+        supplementId,
+        count: newBottle.count,
+        price: newBottle.price,
+        purchaseUrl: newBottle.purchaseUrl || undefined,
+        purchasedAt: fromDateInput(newBottle.purchasedAt),
+      });
+      setAddingBottle(false);
+      setNewBottle({
+        count: supplement.jarSize,
+        price: 0,
+        purchaseUrl: "",
+        purchasedAt: toDateInput(Date.now()),
+      });
+    } catch (err) {
+      console.error("Failed to add bottle:", err);
+      setError("Failed to add bottle");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSaveBottle = async (id: Id<"bottles">, currentRemaining: number) => {
+    setSaving(true);
+    setError("");
+    try {
+      await updateBottle({
+        id,
+        count: editBottle.count,
+        price: editBottle.price,
+        purchaseUrl: editBottle.purchaseUrl, // "" clears it (see bottles.update)
+        purchasedAt: fromDateInput(editBottle.purchasedAt),
+      });
+      // If the user corrected the on-hand count, apply it as a recount.
+      if (Math.round(editBottle.remaining) !== Math.round(currentRemaining)) {
+        await recountBottle({ id, remaining: editBottle.remaining });
+      }
+      setEditingBottleId(null);
+    } catch (err) {
+      console.error("Failed to update bottle:", err);
+      setError("Failed to update bottle");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRemoveBottle = async (id: Id<"bottles">) => {
+    if (!confirm("Remove this bottle? Its price drops from lifetime spend.")) {
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      await removeBottle({ id });
+      setEditingBottleId(null);
+    } catch (err) {
+      console.error("Failed to remove bottle:", err);
+      setError("Failed to remove bottle");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleAddDosage = async () => {
+    if (!addingDosageFor) return;
+    setSaving(true);
+    setError("");
+    try {
+      await createDosage({
+        supplementId,
+        personId: addingDosageFor,
+        pillsPerWeek: newDosagePillsPerWeek,
+      });
+      setAddingDosageFor(null);
+      setNewDosagePillsPerWeek(7);
+    } catch (err) {
+      console.error("Failed to add dosage:", err);
+      setError("Failed to add dosage");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRemoveDosage = async (dosageId: Id<"dosages">) => {
+    setSaving(true);
+    try {
+      await removeDosage({ id: dosageId });
+    } catch (err) {
+      console.error("Failed to remove dosage:", err);
+      setError("Failed to remove dosage");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const usersForThisSupplement = new Set(dosages.map((d) => d.personId));
+
+  return (
+    <div className="space-y-6 max-w-2xl">
+      <div className="flex items-center justify-between">
+        <Link
+          href="/supplements"
+          className="text-sm text-primary hover:underline"
+        >
+          ← Back to supplements
+        </Link>
+        <button
+          onClick={handleDelete}
+          disabled={saving}
+          className="text-sm text-critical hover:text-critical/80 disabled:opacity-50"
+        >
+          Delete supplement
+        </button>
+      </div>
+
+      {error && (
+        <div className="bg-critical-light border border-critical/25 text-critical px-4 py-3 rounded-lg">
+          {error}
+        </div>
+      )}
+
+      {/* Main Info Card */}
+      <div className="card p-6 space-y-4">
+        {supplement.imageUrl && (
+          <div className="w-32 h-32 bg-surface-alt rounded-lg overflow-hidden border border-black/10">
+            <img
+              src={supplement.imageUrl}
+              alt={supplement.name}
+              className="w-full h-full object-cover"
+            />
+          </div>
+        )}
+
+        <div className="flex items-start justify-between">
+          <div className="flex-1">
+            {isEditing ? (
+              <div className="mb-2 space-y-2">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={editData.name}
+                    onChange={(e) =>
+                      setEditData({ ...editData, name: e.target.value })
+                    }
+                    className="flex-1 px-3 py-2 border border-black/16 rounded-lg font-bold text-lg"
+                  />
+                  <DsldFindDetails
+                    initialQuery={editData.name}
+                    onApply={applyDsldLabel}
+                  />
+                </div>
+                {pendingDsldId && (
+                  <div className="bg-primary-light border border-primary/30 rounded-lg px-3 py-2 text-xs flex items-center justify-between gap-2">
+                    <span className="text-primary font-medium">
+                      ✓ Will save DSLD #{pendingDsldId} facts & label on save
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPendingDsldId(null);
+                        setPendingNutrients(null);
+                      }}
+                      className="text-text-muted hover:text-critical flex-shrink-0"
+                    >
+                      Unlink
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <h1 className="text-2xl font-bold mb-2">{supplement.name}</h1>
+            )}
+
+            {supplement.brand && (
+              <p className="text-sm text-text-muted">
+                {supplement.brand}
+                {supplement.form && ` · ${supplement.form}`}
+              </p>
+            )}
+          </div>
+
+          <div
+            className={`px-3 py-1 rounded-full text-sm font-semibold status-${status}`}
+          >
+            {status === "critical" && `${daysLeft} days`}
+            {status === "low" && `${daysLeft} days`}
+            {status === "on-track" && "On track"}
+            {status === "stocked" && "Stocked"}
+          </div>
+        </div>
+
+        <div className="border-t border-black/10 pt-4">
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <label className="text-xs text-text-label font-semibold">
+                On hand
+              </label>
+              <div className="mt-2 text-lg font-mono font-bold">
+                {ledger.onHand}
+              </div>
+              <div className="text-xs text-text-muted">
+                {ledger.bottleCount}{" "}
+                {ledger.bottleCount === 1 ? "bottle" : "bottles"}
+                {openState &&
+                  ledger.bottleCount > 1 &&
+                  ` · open at ${ledger.openRemaining}/${openState.bottle.count}`}
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs text-text-label font-semibold">
+                Runs out in
+              </label>
+              <div className="mt-2 text-lg font-bold">
+                {isFinite(daysLeft) ? daysLeft : "—"}
+              </div>
+              <div className="text-xs text-text-muted">
+                {isFinite(daysLeft)
+                  ? `days · ${Math.round(rate * 10) / 10}/day`
+                  : "no one taking it"}
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs text-text-label font-semibold">
+                Monthly spend
+              </label>
+              <div className="mt-2 text-lg font-mono font-bold">
+                {monthlySpend > 0 ? `$${monthlySpend.toFixed(2)}` : "—"}
+              </div>
+              <div className="text-xs text-text-muted">
+                {ledger.openCostPerPill > 0
+                  ? `$${ledger.openCostPerPill.toFixed(3)}/pill`
+                  : "no price yet"}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Aggregated purchase links from all bottles */}
+        {!isEditing && purchaseLinks.length > 0 && (
+          <div className="border-t border-black/10 pt-4">
+            <div className="text-xs text-text-label font-semibold mb-2">
+              Buy again
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {purchaseLinks.map((url) => (
+                <a
+                  key={url}
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs px-3 py-1.5 rounded-lg border border-primary/40 text-primary hover:bg-primary-light/50 transition-colors"
+                >
+                  {storeLabel(url)} ↗
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Identity edit fields */}
+        {isEditing && (
+          <div className="border-t border-black/10 pt-4 space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-semibold text-text-label">
+                  Brand
+                </label>
+                <input
+                  type="text"
+                  value={editData.brand}
+                  onChange={(e) =>
+                    setEditData({ ...editData, brand: e.target.value })
+                  }
+                  className="w-full mt-1 px-3 py-2 border border-black/16 rounded-lg text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-text-label">
+                  Form
+                </label>
+                <input
+                  type="text"
+                  value={editData.form}
+                  onChange={(e) =>
+                    setEditData({ ...editData, form: e.target.value })
+                  }
+                  className="w-full mt-1 px-3 py-2 border border-black/16 rounded-lg text-sm"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-text-label">
+                Serving size
+              </label>
+              <input
+                type="text"
+                value={editData.servingSize}
+                onChange={(e) =>
+                  setEditData({ ...editData, servingSize: e.target.value })
+                }
+                className="w-full mt-1 px-3 py-2 border border-black/16 rounded-lg text-sm"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-text-label">
+                Default bottle size (pills)
+              </label>
+              <input
+                type="number"
+                min={1}
+                value={editData.jarSize || ""}
+                onChange={(e) =>
+                  setEditData({
+                    ...editData,
+                    jarSize: Math.max(0, parseInt(e.target.value) || 0),
+                  })
+                }
+                className="w-32 mt-1 px-3 py-2 border border-black/16 rounded-lg font-mono text-sm"
+              />
+              <p className="text-xs text-text-muted mt-1">
+                Just the default for new bottles. Edit stock in Bottles below.
+              </p>
+            </div>
+            <ImageUploader
+              imageUrl={editData.imageUrl}
+              searchQuery={editData.name || supplement.name}
+              onImageChange={(url) =>
+                setEditData({ ...editData, imageUrl: url })
+              }
+            />
+          </div>
+        )}
+
+        {/* Action Buttons */}
+        <div className="border-t border-black/10 pt-4 flex gap-2">
+          {!isEditing ? (
+            <button
+              onClick={() => {
+                setEditData({
+                  name: supplement.name,
+                  brand: supplement.brand || "",
+                  form: supplement.form || "",
+                  servingSize: supplement.servingSize || "",
+                  category: supplement.category || "",
+                  jarSize: supplement.jarSize,
+                  imageUrl: supplement.imageUrl || "",
+                });
+                setPendingDsldId(null);
+                setPendingNutrients(null);
+                setIsEditing(true);
+              }}
+              className="btn-primary flex-1"
+            >
+              Edit
+            </button>
+          ) : (
+            <>
+              <button
+                onClick={handleSaveEdit}
+                disabled={saving}
+                className="btn-primary flex-1 disabled:opacity-50"
+              >
+                {saving ? "Saving..." : "Save changes"}
+              </button>
+              <button
+                onClick={() => setIsEditing(false)}
+                className="btn-outline flex-1"
+              >
+                Cancel
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Bottles (FIFO ledger) */}
+      <div className="card p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-bold">Bottles</h2>
+          <div className="text-right">
+            <div className="text-xs text-text-label font-semibold">
+              Lifetime spent
+            </div>
+            <div className="font-mono font-bold">${lifetime.toFixed(2)}</div>
+          </div>
+        </div>
+
+        {nonEmpty.length === 0 && empty.length === 0 && (
+          <p className="text-sm text-text-muted">
+            No bottles logged. Add one to start tracking stock & spend.
+          </p>
+        )}
+
+        {/* Open + sealed spares */}
+        <div className="space-y-2">
+          {nonEmpty.map((s) => {
+            const id = s.bottle._id as Id<"bottles">;
+            const isEditingThis = editingBottleId === id;
+            return (
+              <div
+                key={id}
+                className="border border-black/10 rounded-lg p-3 space-y-2"
+              >
+                <div className="flex items-center gap-3">
+                  <span
+                    className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                      s.isOpen
+                        ? "bg-primary text-white"
+                        : "bg-surface-alt text-text-muted"
+                    }`}
+                  >
+                    {s.isOpen ? "Open" : "Spare"}
+                  </span>
+                  <span className="font-mono text-sm">
+                    {Math.round(s.remaining)} / {s.bottle.count}
+                  </span>
+                  <span className="font-mono text-sm">
+                    ${s.bottle.price.toFixed(2)}
+                  </span>
+                  <span className="text-xs text-text-muted">
+                    ${s.costPerPill.toFixed(3)}/pill
+                  </span>
+                  <span className="text-xs text-text-muted ml-auto">
+                    {toDateInput(s.bottle.purchasedAt)}
+                  </span>
+                </div>
+                <div className="h-1.5 bg-surface-alt rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-primary/60"
+                    style={{ width: `${Math.min(100, s.fillPct)}%` }}
+                  />
+                </div>
+                {!isEditingThis ? (
+                  <div className="flex gap-3 text-xs items-center">
+                    {s.bottle.purchaseUrl && (
+                      <a
+                        href={s.bottle.purchaseUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {storeLabel(s.bottle.purchaseUrl)} ↗
+                      </a>
+                    )}
+                    <button
+                      onClick={() => {
+                        setEditingBottleId(id);
+                        setEditBottle({
+                          count: s.bottle.count,
+                          price: s.bottle.price,
+                          purchaseUrl: s.bottle.purchaseUrl ?? "",
+                          purchasedAt: toDateInput(s.bottle.purchasedAt),
+                          remaining: Math.round(s.remaining),
+                        });
+                      }}
+                      className="text-primary hover:underline"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => handleRemoveBottle(id)}
+                      disabled={saving}
+                      className="text-critical hover:underline disabled:opacity-50"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                ) : (
+                  <div className="border-t border-black/10 pt-2 space-y-2">
+                    <div className="grid grid-cols-2 gap-2">
+                      <label className="text-xs text-text-label font-semibold">
+                        Price
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={editBottle.price}
+                          onChange={(e) =>
+                            setEditBottle({
+                              ...editBottle,
+                              price: parseFloat(e.target.value) || 0,
+                            })
+                          }
+                          className="w-full mt-1 px-2 py-1.5 border border-black/16 rounded-lg font-mono text-sm"
+                        />
+                      </label>
+                      <label className="text-xs text-text-label font-semibold">
+                        Count (capacity)
+                        <input
+                          type="number"
+                          min="1"
+                          value={editBottle.count || ""}
+                          onChange={(e) =>
+                            setEditBottle({
+                              ...editBottle,
+                              count: Math.max(0, parseInt(e.target.value) || 0),
+                            })
+                          }
+                          className="w-full mt-1 px-2 py-1.5 border border-black/16 rounded-lg font-mono text-sm"
+                        />
+                      </label>
+                      <label className="text-xs text-text-label font-semibold">
+                        Purchased
+                        <input
+                          type="date"
+                          value={editBottle.purchasedAt}
+                          onChange={(e) =>
+                            setEditBottle({
+                              ...editBottle,
+                              purchasedAt: e.target.value,
+                            })
+                          }
+                          className="w-full mt-1 px-2 py-1.5 border border-black/16 rounded-lg text-sm"
+                        />
+                      </label>
+                      <label className="text-xs text-text-label font-semibold">
+                        Pills remaining now
+                        <input
+                          type="number"
+                          min="0"
+                          max={editBottle.count || undefined}
+                          value={editBottle.remaining}
+                          onChange={(e) =>
+                            setEditBottle({
+                              ...editBottle,
+                              remaining: Math.max(
+                                0,
+                                parseInt(e.target.value) || 0
+                              ),
+                            })
+                          }
+                          className="w-full mt-1 px-2 py-1.5 border border-black/16 rounded-lg font-mono text-sm"
+                        />
+                      </label>
+                    </div>
+                    <label className="text-xs text-text-label font-semibold block">
+                      Purchase link
+                      <input
+                        type="url"
+                        placeholder="https://store.com/product"
+                        value={editBottle.purchaseUrl}
+                        onChange={(e) =>
+                          setEditBottle({
+                            ...editBottle,
+                            purchaseUrl: e.target.value,
+                          })
+                        }
+                        className="w-full mt-1 px-2 py-1.5 border border-black/16 rounded-lg font-mono text-sm"
+                      />
+                    </label>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleSaveBottle(id, s.remaining)}
+                        disabled={saving}
+                        className="btn-primary flex-1 text-sm py-1.5 disabled:opacity-50"
+                      >
+                        {saving ? "Saving..." : "Save"}
+                      </button>
+                      <button
+                        onClick={() => setEditingBottleId(null)}
+                        className="btn-outline flex-1 text-sm py-1.5"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Emptied history */}
+        {empty.length > 0 && (
+          <details className="text-sm">
+            <summary className="cursor-pointer text-text-muted">
+              Emptied ({empty.length}) · $
+              {getLifetimeSpent(empty.map((s) => s.bottle)).toFixed(2)}
+            </summary>
+            <div className="mt-2 space-y-1">
+              {empty.map((s) => {
+                const id = s.bottle._id as Id<"bottles">;
+                return (
+                  <div
+                    key={id}
+                    className="flex items-center gap-3 text-xs text-text-muted px-1"
+                  >
+                    <span className="font-mono">{s.bottle.count} ct</span>
+                    <span className="font-mono">
+                      ${s.bottle.price.toFixed(2)}
+                    </span>
+                    <span>{toDateInput(s.bottle.purchasedAt)}</span>
+                    <button
+                      onClick={() => handleRemoveBottle(id)}
+                      disabled={saving}
+                      className="text-critical hover:underline ml-auto disabled:opacity-50"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </details>
+        )}
+
+        {/* Add bottle */}
+        <div className="border-t border-black/10 pt-4">
+          {addingBottle ? (
+            <div className="space-y-2">
+              <BottleFields value={newBottle} onChange={setNewBottle} />
+              <div className="flex gap-2">
+                <button
+                  onClick={handleAddBottle}
+                  disabled={saving}
+                  className="btn-primary flex-1 text-sm py-1.5 disabled:opacity-50"
+                >
+                  {saving ? "Adding..." : "Add bottle"}
+                </button>
+                <button
+                  onClick={() => setAddingBottle(false)}
+                  className="btn-outline flex-1 text-sm py-1.5"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => {
+                setNewBottle({
+                  count: supplement.jarSize,
+                  price: 0,
+                  purchaseUrl: "",
+                  purchasedAt: toDateInput(Date.now()),
+                });
+                setAddingBottle(true);
+              }}
+              className="w-full text-left px-3 py-2 border border-dashed border-primary/50 rounded-lg hover:bg-primary-light/50 transition-colors text-sm"
+            >
+              + Add bottle
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* DSLD Supplement Facts (renders only if facts are linked) */}
+      <SupplementFactsPanel supplementId={supplementId} />
+
+      {/* Dosages Section */}
+      <div className="card p-6 space-y-4">
+        <h2 className="text-lg font-bold">Who takes this?</h2>
+
+        {dosages.length > 0 ? (
+          <div className="space-y-2">
+            {dosages.map((dosage) => {
+              const person = people.find((p) => p._id === dosage.personId);
+              return (
+                <div
+                  key={dosage._id}
+                  className="flex items-center justify-between border border-black/10 rounded-lg p-3"
+                >
+                  <div>
+                    <div className="font-medium">{person?.name}</div>
+                    <div className="text-sm text-text-muted">
+                      {getDosageWeekly(dosage)} per week ·{" "}
+                      {Math.round((getDosageWeekly(dosage) / 7) * 100) / 100}/day
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleRemoveDosage(dosage._id)}
+                    disabled={saving}
+                    className="text-sm text-critical hover:text-critical/80 disabled:opacity-50"
+                  >
+                    Remove
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-sm text-text-muted">No one assigned yet.</p>
+        )}
+
+        {/* Add Dosage */}
+        <div className="border-t border-black/10 pt-4">
+          {addingDosageFor ? (
+            <div className="space-y-3">
+              <p className="text-sm font-medium">
+                Add dosage for{" "}
+                {people.find((p) => p._id === addingDosageFor)?.name}
+              </p>
+              <DosageInput
+                value={newDosagePillsPerWeek}
+                onChange={setNewDosagePillsPerWeek}
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={handleAddDosage}
+                  disabled={saving}
+                  className="btn-primary flex-1 disabled:opacity-50"
+                >
+                  {saving ? "Adding..." : "Add dosage"}
+                </button>
+                <button
+                  onClick={() => setAddingDosageFor(null)}
+                  className="btn-outline flex-1"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {people
+                .filter((p) => !usersForThisSupplement.has(p._id))
+                .map((person) => (
+                  <button
+                    key={person._id}
+                    onClick={() => setAddingDosageFor(person._id)}
+                    className="w-full text-left px-3 py-2 border border-dashed border-primary/50 rounded-lg hover:bg-primary-light/50 transition-colors text-sm"
+                  >
+                    + Add for {person.name}
+                  </button>
+                ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

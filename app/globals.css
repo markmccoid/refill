@@ -1,0 +1,60 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply font-sans text-text antialiased;
+  }
+
+  h1 {
+    @apply text-2xl font-bold tracking-tight;
+  }
+
+  h2 {
+    @apply text-xl font-bold tracking-tight;
+  }
+
+  button {
+    @apply transition-colors;
+  }
+
+  input,
+  textarea {
+    @apply focus:outline-none focus:ring-2 focus:ring-primary focus:ring-opacity-20;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center justify-center px-4 py-2 bg-primary text-white rounded-sm font-medium text-sm hover:bg-primary-dark transition-colors;
+  }
+
+  .btn-outline {
+    @apply inline-flex items-center justify-center px-4 py-2 border border-current text-text rounded-sm font-medium text-sm hover:bg-surface-alt transition-colors;
+  }
+
+  .card {
+    @apply bg-surface border border-black/10 rounded-md shadow-card;
+  }
+
+  .status-critical {
+    @apply text-critical bg-critical-light border border-critical/25;
+  }
+
+  .status-low {
+    @apply text-low bg-low-light;
+  }
+
+  .status-on-track {
+    @apply text-on-track bg-on-track-light;
+  }
+
+  .status-stocked {
+    @apply text-stocked bg-stocked-light;
+  }
+}
+
+* {
+  @apply border-border;
+}
