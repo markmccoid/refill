@@ -4,7 +4,7 @@ import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import Link from "next/link";
 import { useDemoHousehold } from "@/hooks/useDemoHousehold";
-import { PillBottle } from "@/components/PillBottle";
+import { RunOutTimeline } from "@/components/RunOutTimeline";
 import {
   getSupplementStatus,
   getDaysLeft,
@@ -40,10 +40,12 @@ export default function DashboardPage() {
       const daysLeft = getDaysLeft(breakdown.onHand, s.consumptionRate);
       const monthlySpend =
         getSpendRatePerDay(s.consumptionRate, breakdown.openCostPerPill) * 30;
+      const capacity = (s.bottles ?? []).reduce((sum, b) => sum + b.count, 0);
       return {
         s,
         breakdown,
         daysLeft,
+        capacity,
         monthlySpend,
         status: getSupplementStatus(daysLeft),
       };
@@ -128,34 +130,17 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Pill Jars Grid */}
-      <div>
-        <h2 className="text-xl font-bold tracking-tight mb-4">Your shelf</h2>
-        <p className="text-text-muted text-sm mb-6">
-          How full each jar is, and how long it'll last
-        </p>
-        <div className="grid grid-cols-5 gap-4">
-          {derived.map(({ s, breakdown, daysLeft, status }) => (
-            <div key={s._id} className="card p-4 flex flex-col items-center space-y-3">
-              <PillBottle fillPct={breakdown.openFillPct} status={status} />
-              <div className="text-center">
-                <h3 className="font-bold text-sm">{s.name}</h3>
-                <p className="text-xs font-mono text-text-muted mt-1">
-                  {breakdown.onHand} on hand
-                  {breakdown.bottleCount > 1 &&
-                    ` · ${breakdown.bottleCount} bottles`}
-                </p>
-              </div>
-              <div className={`px-2 py-1 rounded-full text-xs font-semibold flex items-center justify-center w-full status-${status}`}>
-                {status === "critical" && `Critical · ${daysLeft}d`}
-                {status === "low" && `Low · ${daysLeft}d`}
-                {status === "on-track" && `On track`}
-                {status === "stocked" && `Stocked`}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
+      {/* Run-out timeline */}
+      <RunOutTimeline
+        rows={derived.map(({ s, breakdown, daysLeft, capacity, status }) => ({
+          id: s._id,
+          name: s.name,
+          onHand: breakdown.onHand,
+          capacity,
+          daysLeft,
+          status,
+        }))}
+      />
     </div>
   );
 }
