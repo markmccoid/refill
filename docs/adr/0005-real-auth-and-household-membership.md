@@ -30,9 +30,22 @@ We replace this with **Convex Auth (email + password)** and a real user → hous
   verifies the caller belongs to the household (or owns the resource) before
   reading/writing. This is what makes the future sharing safe — a client can't act
   on another household by passing its id.
-- **Route protection** via `middleware.ts` (Convex Auth Next.js middleware):
-  unauthenticated visits to app routes redirect to `/signin`; authenticated visits
-  to `/signin` redirect to `/dashboard`.
+- **Client-side auth, not SSR.** We use `ConvexAuthProvider` (`@convex-dev/auth/react`)
+  with the token in localStorage — *not* the Next.js SSR/cookie flow. The SSR
+  middleware flow (`ConvexAuthNextjsServerProvider` + `convexAuthNextjsMiddleware`)
+  did not work under Next 16 (the `middleware` convention is deprecated for `proxy`
+  and cookies weren't recognised — sign-in succeeded server-side but the client
+  never became authenticated). The app has no SSR data needs (every page is
+  `"use client"`), so client-side auth is simpler and sufficient. A session token
+  in localStorage is fine — unlike the old bug, it isn't the *identity* and doesn't
+  trigger seeding; if cleared, you just sign in again.
+- **Route protection** is client-side: `components/AuthGate.tsx` (wrapping the
+  `(app)` layout) redirects unauthenticated users to `/signin`; the signin page
+  redirects authenticated users to `/dashboard`. No middleware.
+- **Deployment gotcha:** set `JWKS` via the Convex **dashboard** (or the MCP env
+  tool), NOT `convex env set "..."` from PowerShell — PowerShell strips the JSON's
+  double quotes, storing invalid JSON, which silently breaks token verification
+  (sign-in "works" but the client never authenticates).
 
 ## Deferred / not done
 
