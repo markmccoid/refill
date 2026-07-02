@@ -13,7 +13,7 @@ const nav = [
   { label: "Supplements", href: "/supplements" },
   { label: "People", href: "/people" },
   { label: "Costs", href: "/costs" },
-  { label: "Buy", href: "/buy" },
+  { label: "Restock", href: "/restock" },
 ];
 
 const AVATAR_GRADIENTS: Record<string, string> = {
@@ -28,6 +28,12 @@ export function Sidebar() {
   const householdId = useHousehold();
   const people = useQuery(
     api.people.list,
+    householdId ? { householdId } : "skip"
+  );
+  // Restock safety net (ADR-0006): supplements running out within the forecast
+  // window that aren't on the plan. Informs — never adds anything itself.
+  const restockBadge = useQuery(
+    api.restock.badgeCount,
     householdId ? { householdId } : "skip"
   );
 
@@ -70,7 +76,16 @@ export function Sidebar() {
                 borderRadius: "8px",
               }}
             >
-              {item.label}
+              <span className="flex items-center justify-between">
+                {item.label}
+                {item.href === "/restock" &&
+                  typeof restockBadge === "number" &&
+                  restockBadge > 0 && (
+                    <span className="ml-2 min-w-5 h-5 px-1.5 rounded-full bg-amber-500 text-white text-[11px] font-bold flex items-center justify-center">
+                      {restockBadge}
+                    </span>
+                  )}
+              </span>
             </Link>
           );
         })}

@@ -1,4 +1,5 @@
-import { mutation } from "./_generated/server";
+import { internalMutation } from "./_generated/server";
+import { v } from "convex/values";
 import {
   getConsumptionRate,
   getOnHand,
@@ -11,8 +12,9 @@ import {
  *   createdAt (so existing depletion is honoured).
  * - dosages: seed pillsPerWeek from legacy pillsPerDose × daysPerWeek.
  */
-export const backfillConsumption = mutation({
+export const backfillConsumption = internalMutation({
   args: {},
+  returns: v.object({ supplements: v.number(), dosages: v.number() }),
   async handler(ctx) {
     let supplements = 0;
     for (const s of await ctx.db.query("supplements").collect()) {
@@ -46,8 +48,9 @@ export const backfillConsumption = mutation({
  * the per-bottle snapshot is exact. Supplements with nothing on hand get no
  * bottles.
  */
-export const backfillBottles = mutation({
+export const backfillBottles = internalMutation({
   args: {},
+  returns: v.object({ migrated: v.number(), created: v.number() }),
   async handler(ctx) {
     let created = 0; // bottles created
     let migrated = 0; // supplements touched
@@ -103,8 +106,9 @@ export const backfillBottles = mutation({
  * Move the legacy supplement-level `purchaseUrl` onto its bottles (purchase
  * links are now per-bottle). Idempotent — only fills bottles that lack a URL.
  */
-export const backfillBottlePurchaseUrls = mutation({
+export const backfillBottlePurchaseUrls = internalMutation({
   args: {},
+  returns: v.object({ updated: v.number() }),
   async handler(ctx) {
     let updated = 0;
     for (const s of await ctx.db.query("supplements").collect()) {

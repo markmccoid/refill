@@ -86,3 +86,14 @@ export async function requireGroupAccess(ctx: Ctx, groupId: Id<"groups">) {
   await requireMembership(ctx, group.householdId);
   return group;
 }
+
+/** Verify the signed-in user may access a retailer and return it. */
+export async function requireRetailerAccess(
+  ctx: Ctx,
+  retailerId: Id<"retailers">
+) {
+  const retailer = await ctx.db.get(retailerId);
+  if (!retailer) throw new Error("Retailer not found.");
+  await requireMembership(ctx, retailer.householdId);
+  return retailer;
+}

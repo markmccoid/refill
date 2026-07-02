@@ -3,6 +3,19 @@ import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
 import { reanchorFor } from "./consumption";
 import { requireSupplementAccess } from "./authz";
+import { linkPurchaseUrl } from "./retailers";
+
+export const bottleDoc = v.object({
+  _id: v.id("bottles"),
+  _creationTime: v.number(),
+  supplementId: v.id("supplements"),
+  count: v.number(),
+  price: v.number(),
+  purchaseUrl: v.optional(v.string()),
+  retailerId: v.optional(v.id("retailers")),
+  purchasedAt: v.number(),
+  remainingAtAnchor: v.number(),
+});
 
 /** Resync the supplement's quantityAnchor cache = Σ bottle.remainingAtAnchor. */
 async function syncAnchorCache(
@@ -19,6 +32,7 @@ async function syncAnchorCache(
 
 export const listBySupplement = query({
   args: { supplementId: v.id("supplements") },
+  returns: v.array(bottleDoc),
   async handler(ctx, { supplementId }) {
     await requireSupplementAccess(ctx, supplementId);
     return await ctx.db
@@ -40,15 +54,23 @@ export const add = mutation({
     purchaseUrl: v.optional(v.string()),
     purchasedAt: v.optional(v.number()),
   },
+  returns: v.id("bottles"),
   async handler(ctx, { supplementId, count, price, purchaseUrl, purchasedAt }) {
-    await requireSupplementAccess(ctx, supplementId);
+    const supplement = await requireSupplementAccess(ctx, supplementId);
+    // A purchase URL feeds the retailer model (ADR-0006): match/create the
+    // retailer by domain and write through the saved link.
+    const url = purchaseUrl?.trim();
+    const retailerId = url
+      ? await linkPurchaseUrl(ctx, supplement.householdId, supplementId, url)
+      : null;
     // Freeze existing bottles' remaining at the current rate before adding.
     await reanchorFor(ctx, supplementId);
     const id = await ctx.db.insert("bottles", {
       supplementId,
       count,
       price,
-      purchaseUrl: purchaseUrl || undefined,
+      purchaseUrl: url || undefined,
+      retailerId: retailerId ?? undefined,
       purchasedAt: purchasedAt ?? Date.now(),
       remainingAtAnchor: count, // a fresh bottle is full at the new anchor
     });
@@ -70,10 +92,11 @@ export const update = mutation({
     purchaseUrl: v.optional(v.string()),
     purchasedAt: v.optional(v.number()),
   },
+  returns: v.union(bottleDoc, v.null()),
   async handler(ctx, { id, count, price, purchaseUrl, purchasedAt }) {
     const bottle = await ctx.db.get(id);
     if (!bottle) return null;
-    await requireSupplementAccess(ctx, bottle.supplementId);
+    const supplement = await requireSupplementAccess(ctx, bottle.supplementId);
 
     const structural = count !== undefined || purchasedAt !== undefined;
     if (structural) {
@@ -85,7 +108,20 @@ export const update = mutation({
 
     const patch: Record<string, number | string | undefined> = {};
     if (price !== undefined) patch.price = price;
-    if (purchaseUrl !== undefined) patch.purchaseUrl = purchaseUrl || undefined;
+    if (purchaseUrl !== undefined) {
+      const url = purchaseUrl.trim();
+      patch.purchaseUrl = url || undefined;
+      // Keep the retailer in step with the URL: re-match on change, clear on
+      // clear (the URL is where the retailer knowledge came from).
+      patch.retailerId = url
+        ? ((await linkPurchaseUrl(
+            ctx,
+            supplement.householdId,
+            bottle.supplementId,
+            url
+          )) ?? undefined)
+        : undefined;
+    }
     if (purchasedAt !== undefined) patch.purchasedAt = purchasedAt;
     if (count !== undefined) {
       patch.count = count;
@@ -101,6 +137,7 @@ export const update = mutation({
 /** Remove a bottle (logged by mistake). Re-anchors the rest, then deletes. */
 export const remove = mutation({
   args: { id: v.id("bottles") },
+  returns: v.null(),
   async handler(ctx, { id }) {
     const bottle = await ctx.db.get(id);
     if (!bottle) return;
@@ -120,6 +157,7 @@ export const recount = mutation({
     id: v.id("bottles"),
     remaining: v.number(),
   },
+  returns: v.union(bottleDoc, v.null()),
   async handler(ctx, { id, remaining }) {
     const bottle = await ctx.db.get(id);
     if (!bottle) return null;

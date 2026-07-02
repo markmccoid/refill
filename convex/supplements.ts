@@ -1,8 +1,10 @@
-import { mutation, query } from "./_generated/server";
+import { internalQuery, mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { getConsumptionRate } from "../lib/supplement-utils";
 import { getActiveDosages } from "./consumption";
 import { requireMembership, requireSupplementAccess } from "./authz";
+import { linkPurchaseUrl } from "./retailers";
+import { bottleDoc } from "./bottles";
 
 const nutrientsValidator = v.array(
   v.object({
@@ -12,10 +14,40 @@ const nutrientsValidator = v.array(
   })
 );
 
+const supplementDoc = v.object({
+  _id: v.id("supplements"),
+  _creationTime: v.number(),
+  householdId: v.id("households"),
+  name: v.string(),
+  groupId: v.optional(v.id("groups")),
+  brand: v.optional(v.string()),
+  form: v.optional(v.string()),
+  servingSize: v.optional(v.string()),
+  servingSizeAmount: v.optional(v.number()),
+  servingSizeUnit: v.optional(v.string()),
+  nutrients: v.optional(nutrientsValidator),
+  category: v.optional(v.string()),
+  imageUrl: v.optional(v.string()),
+  jarSize: v.number(),
+  quantityAnchor: v.optional(v.number()),
+  anchoredAt: v.optional(v.number()),
+  remaining: v.optional(v.number()),
+  price: v.optional(v.number()),
+  purchaseUrl: v.optional(v.string()),
+  createdAt: v.number(),
+});
+
 // List supplements with each one's consumption rate (pills/day) attached, so
 // the client can compute on-hand live. On-hand itself is derived, not stored.
 export const list = query({
   args: { householdId: v.id("households") },
+  returns: v.array(
+    v.object({
+      ...supplementDoc.fields,
+      consumptionRate: v.number(),
+      bottles: v.array(bottleDoc),
+    })
+  ),
   async handler(ctx, { householdId }) {
     await requireMembership(ctx, householdId);
     const supplements = await ctx.db
@@ -43,8 +75,20 @@ export const list = query({
 
 export const get = query({
   args: { id: v.id("supplements") },
+  returns: supplementDoc,
   async handler(ctx, { id }) {
     return await requireSupplementAccess(ctx, id);
+  },
+});
+
+// Access check for actions (which have no ctx.db): throws unless the signed-in
+// caller may touch this supplement. Auth propagates through ctx.runQuery.
+export const assertAccess = internalQuery({
+  args: { id: v.id("supplements") },
+  returns: v.null(),
+  async handler(ctx, { id }) {
+    await requireSupplementAccess(ctx, id);
+    return null;
   },
 });
 
@@ -73,6 +117,7 @@ export const create = mutation({
       })
     ),
   },
+  returns: v.id("supplements"),
   async handler(ctx, args) {
     await requireMembership(ctx, args.householdId);
     const { bottles, ...supplementFields } = args;
@@ -87,11 +132,18 @@ export const create = mutation({
     });
 
     for (const b of bottles) {
+      // A purchase URL feeds the retailer model (ADR-0006): match/create the
+      // retailer by domain and write through the saved link.
+      const url = b.purchaseUrl?.trim();
+      const retailerId = url
+        ? await linkPurchaseUrl(ctx, args.householdId, supplementId, url)
+        : null;
       await ctx.db.insert("bottles", {
         supplementId,
         count: b.count,
         price: b.price,
-        purchaseUrl: b.purchaseUrl || undefined,
+        purchaseUrl: url || undefined,
+        retailerId: retailerId ?? undefined,
         purchasedAt: b.purchasedAt,
         remainingAtAnchor: b.count, // full at the creation anchor
       });
@@ -117,6 +169,7 @@ export const update = mutation({
     jarSize: v.optional(v.number()),
     imageUrl: v.optional(v.string()),
   },
+  returns: v.union(supplementDoc, v.null()),
   async handler(ctx, { id, ...updates }) {
     await requireSupplementAccess(ctx, id);
     await ctx.db.patch(id, updates);
@@ -126,6 +179,7 @@ export const update = mutation({
 
 export const remove = mutation({
   args: { id: v.id("supplements") },
+  returns: v.null(),
   async handler(ctx, { id }) {
     await requireSupplementAccess(ctx, id);
     // Cascade: DSLD facts (+ stored assets) and dosages.

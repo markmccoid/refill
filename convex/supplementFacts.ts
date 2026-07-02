@@ -1,5 +1,6 @@
-import { internalMutation, mutation, query } from "./_generated/server";
+import { internalMutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import { requireSupplementAccess } from "./authz";
 
 const rowValidator = v.object({
   name: v.string(),
@@ -17,7 +18,32 @@ const rowValidator = v.object({
 // Facts for a supplement, with resolved (signed) storage URLs for the assets.
 export const getBySupplementId = query({
   args: { supplementId: v.id("supplements") },
+  returns: v.union(
+    v.null(),
+    v.object({
+      _id: v.id("supplementFacts"),
+      _creationTime: v.number(),
+      supplementId: v.id("supplements"),
+      dsldId: v.string(),
+      fullName: v.string(),
+      brandName: v.optional(v.string()),
+      form: v.optional(v.string()),
+      servingSize: v.optional(v.string()),
+      servingsPerContainer: v.optional(v.number()),
+      upcSku: v.optional(v.string()),
+      offMarket: v.optional(v.boolean()),
+      rows: v.array(rowValidator),
+      otherIngredients: v.optional(v.string()),
+      raw: v.string(),
+      thumbnailStorageId: v.optional(v.id("_storage")),
+      pdfStorageId: v.optional(v.id("_storage")),
+      fetchedAt: v.number(),
+      thumbnailUrl: v.union(v.string(), v.null()),
+      pdfUrl: v.union(v.string(), v.null()),
+    })
+  ),
   handler: async (ctx, { supplementId }) => {
+    await requireSupplementAccess(ctx, supplementId);
     const facts = await ctx.db
       .query("supplementFacts")
       .withIndex("by_supplement", (q) => q.eq("supplementId", supplementId))
@@ -53,6 +79,7 @@ export const upsert = internalMutation({
     thumbnailStorageId: v.optional(v.id("_storage")),
     pdfStorageId: v.optional(v.id("_storage")),
   },
+  returns: v.null(),
   handler: async (ctx, args) => {
     const existing = await ctx.db
       .query("supplementFacts")
@@ -71,21 +98,5 @@ export const upsert = internalMutation({
     } else {
       await ctx.db.insert("supplementFacts", { ...args, fetchedAt: Date.now() });
     }
-  },
-});
-
-// Remove a supplement's facts + assets (used by the supplement-delete cascade).
-export const removeForSupplement = mutation({
-  args: { supplementId: v.id("supplements") },
-  handler: async (ctx, { supplementId }) => {
-    const facts = await ctx.db
-      .query("supplementFacts")
-      .withIndex("by_supplement", (q) => q.eq("supplementId", supplementId))
-      .unique();
-    if (!facts) return;
-    if (facts.thumbnailStorageId)
-      await ctx.storage.delete(facts.thumbnailStorageId);
-    if (facts.pdfStorageId) await ctx.storage.delete(facts.pdfStorageId);
-    await ctx.db.delete(facts._id);
   },
 });

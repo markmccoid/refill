@@ -1,24 +1,7 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
-import { requireUserId, getUserHouseholdId } from "./authz";
-
-export const create = mutation({
-  args: { name: v.string() },
-  async handler(ctx, { name }) {
-    return await ctx.db.insert("households", {
-      name,
-      createdAt: Date.now(),
-    });
-  },
-});
-
-export const get = query({
-  args: { id: v.id("households") },
-  async handler(ctx, { id }) {
-    return await ctx.db.get(id);
-  },
-});
+import { requireUserId, getUserHouseholdId, requireMembership } from "./authz";
 
 /**
  * The household of the currently signed-in user (with its id), or null if the
@@ -27,6 +10,18 @@ export const get = query({
  */
 export const currentHousehold = query({
   args: {},
+  returns: v.union(
+    v.null(),
+    v.object({
+      _id: v.id("households"),
+      _creationTime: v.number(),
+      name: v.string(),
+      createdAt: v.number(),
+      forecastWindowDays: v.optional(v.number()),
+      coverageTargetDays: v.optional(v.number()),
+      householdId: v.id("households"),
+    })
+  ),
   async handler(ctx) {
     const householdId = await getUserHouseholdId(ctx);
     if (!householdId) return null;
@@ -44,6 +39,7 @@ export const currentHousehold = query({
  */
 export const ensureForCurrentUser = mutation({
   args: { name: v.optional(v.string()) },
+  returns: v.id("households"),
   async handler(ctx, { name }) {
     const userId = await requireUserId(ctx);
 
@@ -68,9 +64,33 @@ export const ensureForCurrentUser = mutation({
   },
 });
 
+/**
+ * Update the household's restock knobs (ADR-0006): forecast window (urgency
+ * signalling) and coverage target (recommended-quantity horizon). Missing
+ * fields are left unchanged; defaults (30/90) apply in code when unset.
+ */
+export const updateSettings = mutation({
+  args: {
+    householdId: v.id("households"),
+    forecastWindowDays: v.optional(v.number()),
+    coverageTargetDays: v.optional(v.number()),
+  },
+  returns: v.null(),
+  async handler(ctx, { householdId, forecastWindowDays, coverageTargetDays }) {
+    await requireMembership(ctx, householdId);
+    const patch: Record<string, number> = {};
+    if (forecastWindowDays !== undefined && forecastWindowDays > 0)
+      patch.forecastWindowDays = forecastWindowDays;
+    if (coverageTargetDays !== undefined && coverageTargetDays > 0)
+      patch.coverageTargetDays = coverageTargetDays;
+    if (Object.keys(patch).length > 0) await ctx.db.patch(householdId, patch);
+  },
+});
+
 /** The signed-in user's id (or null) — handy for the client to gate UI. */
 export const currentUserId = query({
   args: {},
+  returns: v.union(v.id("users"), v.null()),
   async handler(ctx) {
     return await getAuthUserId(ctx);
   },

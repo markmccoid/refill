@@ -10,6 +10,9 @@ export default defineSchema({
   households: defineTable({
     name: v.string(),
     createdAt: v.number(),
+    // Restock knobs (ADR-0006). Missing => defaults (30 / 90) applied in code.
+    forecastWindowDays: v.optional(v.number()), // urgency signalling only
+    coverageTargetDays: v.optional(v.number()), // drives recommended quantity
   }),
 
   // Links users to households (many-to-many, multi-tenant ready). Today each
@@ -86,6 +89,7 @@ export default defineSchema({
     count: v.number(), // label capacity of this bottle
     price: v.number(), // what was paid for this bottle
     purchaseUrl: v.optional(v.string()), // where this bottle was bought (per-store)
+    retailerId: v.optional(v.id("retailers")), // which Retailer it came from (ADR-0006)
     purchasedAt: v.number(), // ms; also the FIFO order key (oldest consumed first)
     // Pills in THIS bottle at the supplement's anchoredAt. Σ across bottles =
     // supplement.quantityAnchor. Consumption drains these oldest-first on read.
@@ -137,23 +141,53 @@ export default defineSchema({
     .index("by_supplement", ["supplementId"])
     .index("by_person", ["personId"]),
 
-  retailerSites: defineTable({
+  // A store the household buys from (ADR-0006). First-class so saved links,
+  // average prices, shipping thresholds, and never-yet-purchased-from stores
+  // all have something to hang on. Managed inline; no delete in v1.
+  retailers: defineTable({
     householdId: v.id("households"),
     name: v.string(),
-    baseUrl: v.string(),
+    baseUrl: v.optional(v.string()),
+    freeShippingThreshold: v.optional(v.number()), // unset ≠ $0: "we don't know"
+    createdAt: v.number(),
   })
     .index("by_household", ["householdId"]),
 
-  priceQuotes: defineTable({
+  // Saved purchase link: the product URL you'd reopen to restock a supplement at
+  // a retailer. One per (supplement, retailer); exists independently of bottles.
+  savedLinks: defineTable({
     supplementId: v.id("supplements"),
-    retailerId: v.id("retailerSites"),
-    sticker: v.number(),
-    shipping: v.number(),
-    total: v.number(),
-    inStock: v.boolean(),
-    etaDays: v.number(),
-    checkedAt: v.number(),
+    retailerId: v.id("retailers"),
+    url: v.string(),
   })
     .index("by_supplement", ["supplementId"])
     .index("by_retailer", ["retailerId"]),
+
+  // One line of the household's single active Restock Plan (ADR-0006). Subject
+  // is what runs out — a solo supplement XOR a group. Entered prices are
+  // session-scoped: they live (and die) with this row. Purchased rows are kept
+  // as history; only "active" rows are the plan.
+  restockItems: defineTable({
+    householdId: v.id("households"),
+    supplementId: v.optional(v.id("supplements")), // solo subject…
+    groupId: v.optional(v.id("groups")), // …XOR group subject
+    qty: v.number(), // planned bottles; pre-filled from the recommendation
+    // The selected Offer = brand + retailer chosen together. For solo items
+    // selectedSupplementId always equals supplementId.
+    selectedSupplementId: v.optional(v.id("supplements")),
+    selectedRetailerId: v.optional(v.id("retailers")),
+    // Manually entered per-bottle sticker prices, keyed by (brand, retailer).
+    enteredPrices: v.array(
+      v.object({
+        supplementId: v.id("supplements"),
+        retailerId: v.id("retailers"),
+        price: v.number(),
+      })
+    ),
+    status: v.union(v.literal("active"), v.literal("purchased")),
+    addedAt: v.number(),
+    purchasedAt: v.optional(v.number()),
+  })
+    .index("by_household", ["householdId"])
+    .index("by_household_status", ["householdId", "status"]),
 });

@@ -20,6 +20,9 @@ import type * as households from "../households.js";
 import type * as http from "../http.js";
 import type * as migrations from "../migrations.js";
 import type * as people from "../people.js";
+import type * as restock from "../restock.js";
+import type * as retailers from "../retailers.js";
+import type * as savedLinks from "../savedLinks.js";
 import type * as supplementFacts from "../supplementFacts.js";
 import type * as supplements from "../supplements.js";
 
@@ -42,6 +45,9 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   migrations: typeof migrations;
   people: typeof people;
+  restock: typeof restock;
+  retailers: typeof retailers;
+  savedLinks: typeof savedLinks;
   supplementFacts: typeof supplementFacts;
   supplements: typeof supplements;
 }>;
