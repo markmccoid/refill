@@ -75,9 +75,15 @@ export const list = query({
 
 export const get = query({
   args: { id: v.id("supplements") },
-  returns: supplementDoc,
+  returns: v.union(supplementDoc, v.null()),
   async handler(ctx, { id }) {
-    return await requireSupplementAccess(ctx, id);
+    // Return null (not throw) when the doc is gone, so a page still subscribed
+    // to a just-deleted supplement can unmount/redirect instead of crashing the
+    // render. Membership violations still throw — that's a real access error.
+    const supplement = await ctx.db.get(id);
+    if (!supplement) return null;
+    await requireMembership(ctx, supplement.householdId);
+    return supplement;
   },
 });
 

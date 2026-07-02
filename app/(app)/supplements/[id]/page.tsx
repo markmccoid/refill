@@ -14,7 +14,7 @@ import { SupplementFactsPanel } from "@/components/SupplementFactsPanel";
 import { DosageInput } from "@/components/DosageInput";
 import { BottleFields } from "@/components/BottleFields";
 import Link from "next/link";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   getSupplementStatus,
   getDaysLeft,
@@ -124,6 +124,12 @@ export default function SupplementDetailPage() {
   const [newDosagePillsPerWeek, setNewDosagePillsPerWeek] = useState(7);
 
   const findDetailsRef = useRef<DsldFindDetailsHandle>(null);
+
+  // `supplement === null` means the doc is gone (e.g. just deleted, or a stale
+  // link) — send them back to the list instead of showing "Loading..." forever.
+  useEffect(() => {
+    if (supplement === null) router.replace("/supplements");
+  }, [supplement, router]);
 
   if (!supplement || !dosages || !people || !bottles || group === undefined) {
     return <div className="text-center py-12">Loading...</div>;
