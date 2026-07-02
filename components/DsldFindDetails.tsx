@@ -1,12 +1,22 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import {
+  useState,
+  useEffect,
+  useCallback,
+  forwardRef,
+  useImperativeHandle,
+} from "react";
 import { useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { FunctionReturnType } from "convex/server";
 
 export type DsldLabel = FunctionReturnType<typeof api.dsld.getLabel>;
 type SearchHit = FunctionReturnType<typeof api.dsld.search>[number];
+
+export interface DsldFindDetailsHandle {
+  open: () => void;
+}
 
 interface DsldFindDetailsProps {
   initialQuery: string;
@@ -15,13 +25,21 @@ interface DsldFindDetailsProps {
   buttonClassName?: string;
 }
 
-export function DsldFindDetails({
-  initialQuery,
-  onApply,
-  buttonLabel = "Find Details",
-  buttonClassName = "btn-outline whitespace-nowrap",
-}: DsldFindDetailsProps) {
+export const DsldFindDetails = forwardRef<
+  DsldFindDetailsHandle,
+  DsldFindDetailsProps
+>(function DsldFindDetails(
+  {
+    initialQuery,
+    onApply,
+    buttonLabel = "Find Details",
+    buttonClassName = "btn-outline whitespace-nowrap",
+  },
+  ref
+) {
   const [open, setOpen] = useState(false);
+
+  useImperativeHandle(ref, () => ({ open: () => setOpen(true) }), []);
 
   return (
     <>
@@ -44,7 +62,7 @@ export function DsldFindDetails({
       )}
     </>
   );
-}
+});
 
 function DsldLookupModal({
   initialQuery,

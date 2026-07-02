@@ -1,12 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useHousehold } from "@/hooks/useHousehold";
 import { ImageUploader } from "@/components/ImageUploader";
-import { DsldFindDetails, type DsldLabel } from "@/components/DsldFindDetails";
+import {
+  DsldFindDetails,
+  type DsldLabel,
+  type DsldFindDetailsHandle,
+} from "@/components/DsldFindDetails";
 import { DosageInput } from "@/components/DosageInput";
 import { BottleFields, type BottleFieldsValue } from "@/components/BottleFields";
 import Link from "next/link";
@@ -17,8 +21,6 @@ interface Nutrient {
   amount: number;
   unit: string;
 }
-
-type EntryMode = "url" | "manual";
 
 interface DosageAssignment {
   personId: Id<"people">;
@@ -61,10 +63,6 @@ export default function AddSupplementPage() {
   const createDosage = useMutation(api.dosages.create);
   const importFacts = useAction(api.dsld.importFacts);
 
-  const [mode, setMode] = useState<EntryMode>("url");
-  const [url, setUrl] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [lookedUp, setLookedUp] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -90,13 +88,14 @@ export default function AddSupplementPage() {
 
   const [dosages, setDosages] = useState<DosageAssignment[]>([]);
 
-  const formVisible = mode === "manual" || lookedUp;
+  const findDetailsRef = useRef<DsldFindDetailsHandle>(null);
 
   function applyDsldLabel(label: DsldLabel) {
     setDsldId(label.dsldId);
     setError("");
+    let jarSize = 0;
     setFormData((prev) => {
-      const jarSize = label.jarSizeSuggestion ?? prev.jarSize;
+      jarSize = label.jarSizeSuggestion ?? prev.jarSize;
       return {
         ...prev,
         name: label.fullName || prev.name,
@@ -108,62 +107,7 @@ export default function AddSupplementPage() {
         jarSize,
       };
     });
-    setBottleDraft((prev) => ({
-      ...prev,
-      count: prev.count || label.jarSizeSuggestion || prev.count,
-    }));
-  }
-
-  async function handleLookup(e: React.FormEvent) {
-    e.preventDefault();
-    if (!url.trim()) {
-      setError("Please enter a URL");
-      return;
-    }
-    setLoading(true);
-    setError("");
-
-    try {
-      const response = await fetch("/api/lookup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
-      });
-
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || "Failed to lookup product");
-      }
-
-      const product = await response.json();
-      const jarSize = product.jarSize || 120;
-
-      setFormData((prev) => ({
-        ...prev,
-        name: product.name || "Product",
-        brand: product.brand || prev.brand,
-        form: product.form || prev.form,
-        servingSize: product.servingSize || prev.servingSize,
-        category: product.category || prev.category,
-        nutrients: product.nutrients || prev.nutrients,
-        jarSize,
-      }));
-      // Seed the first bottle from the looked-up product.
-      setBottleDraft({
-        count: jarSize,
-        price: product.price || 0,
-        purchaseUrl: url,
-        purchasedAt: toDateInput(Date.now()),
-      });
-      setLookedUp(true);
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Failed to lookup product";
-      setError(message);
-      console.error("Lookup error:", err);
-    } finally {
-      setLoading(false);
-    }
+    setBottleDraft((prev) => ({ ...prev, count: jarSize }));
   }
 
   function addBottleToList() {
@@ -243,40 +187,8 @@ export default function AddSupplementPage() {
       <div>
         <h1 className="text-2xl font-bold">Add a supplement</h1>
         <p className="text-text-muted text-sm mt-1">
-          {mode === "url"
-            ? "Paste a product link — we'll fill in the details, then add your bottles."
-            : "Enter the supplement details, then add your bottles."}
+          Enter the supplement details, then add your bottles.
         </p>
-      </div>
-
-      {/* Mode Toggle */}
-      <div className="flex gap-2 border-b border-black/10">
-        <button
-          onClick={() => {
-            setMode("url");
-            setError("");
-          }}
-          className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${
-            mode === "url"
-              ? "border-primary text-primary"
-              : "border-transparent text-text-muted hover:text-text"
-          }`}
-        >
-          Paste link
-        </button>
-        <button
-          onClick={() => {
-            setMode("manual");
-            setError("");
-          }}
-          className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${
-            mode === "manual"
-              ? "border-primary text-primary"
-              : "border-transparent text-text-muted hover:text-text"
-          }`}
-        >
-          Enter manually
-        </button>
       </div>
 
       {error && (
@@ -285,312 +197,275 @@ export default function AddSupplementPage() {
         </div>
       )}
 
-      {/* URL Lookup */}
-      {mode === "url" && (
-        <form onSubmit={handleLookup} className="space-y-2">
-          <div className="flex gap-2">
+      <form onSubmit={handleSave} className="space-y-4">
+        {/* Identity */}
+        <div>
+          <label className="text-xs font-semibold text-text-label">
+            Supplement name *
+          </label>
+          <div className="flex gap-2 mt-1">
             <input
-              type="url"
-              placeholder="https://example.com/product"
-              value={url}
+              type="text"
+              placeholder="e.g., Omega-3 Fish Oil"
+              value={formData.name}
               onChange={(e) => {
-                setUrl(e.target.value);
+                setFormData({ ...formData, name: e.target.value });
                 setError("");
               }}
-              className="flex-1 px-4 py-2 border border-black/16 rounded-lg focus:ring-2 focus:ring-primary/20 font-mono text-sm"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  findDetailsRef.current?.open();
+                }
+              }}
+              className="flex-1 px-4 py-2 border border-black/16 rounded-lg font-medium text-sm"
             />
-            <button
-              type="submit"
-              disabled={loading}
-              className="btn-primary disabled:opacity-50"
-            >
-              {loading ? "Looking up..." : "Look up"}
-            </button>
+            <DsldFindDetails
+              ref={findDetailsRef}
+              initialQuery={formData.name}
+              onApply={applyDsldLabel}
+            />
           </div>
-          <p className="text-xs text-text-muted">
-            Works with most supplement retailers. Or{" "}
+          <p className="text-xs text-text-muted mt-1">
+            Type a name, then{" "}
+            <span className="font-medium">Find Details</span> to pull the
+            official label & facts from the NIH database.
+          </p>
+        </div>
+
+        {dsldId && (
+          <div className="bg-primary-light border border-primary/30 rounded-lg px-4 py-3 text-sm flex items-start justify-between gap-3">
+            <div>
+              <span className="font-semibold text-primary">
+                ✓ Linked to DSLD #{dsldId}
+              </span>
+              <p className="text-text-muted text-xs mt-0.5">
+                {[formData.brand, formData.form, formData.servingSize]
+                  .filter(Boolean)
+                  .join(" · ")}
+                {" — supplement facts & label image will be saved."}
+              </p>
+            </div>
             <button
               type="button"
-              onClick={() => setMode("manual")}
-              className="text-primary hover:underline"
+              onClick={() => setDsldId(null)}
+              className="text-xs text-text-muted hover:text-critical flex-shrink-0"
             >
-              enter details manually
+              Unlink
             </button>
-            .
-          </p>
-        </form>
-      )}
+          </div>
+        )}
 
-      {/* Shared form: identity + bottles + dosages */}
-      {formVisible && (
-        <form onSubmit={handleSave} className="space-y-4">
-          {/* Identity */}
+        <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="text-xs font-semibold text-text-label">
-              Supplement name *
+              Brand
             </label>
-            <div className="flex gap-2 mt-1">
-              <input
-                type="text"
-                placeholder="e.g., Omega-3 Fish Oil"
-                value={formData.name}
-                onChange={(e) => {
-                  setFormData({ ...formData, name: e.target.value });
-                  setError("");
-                }}
-                className="flex-1 px-4 py-2 border border-black/16 rounded-lg font-medium text-sm"
-              />
-              {mode === "manual" && (
-                <DsldFindDetails
-                  initialQuery={formData.name}
-                  onApply={applyDsldLabel}
-                />
-              )}
-            </div>
-            {mode === "manual" && (
-              <p className="text-xs text-text-muted mt-1">
-                Type a name, then{" "}
-                <span className="font-medium">Find Details</span> to pull the
-                official label & facts from the NIH database.
-              </p>
-            )}
+            <input
+              type="text"
+              placeholder="e.g., Thorne"
+              value={formData.brand}
+              onChange={(e) =>
+                setFormData({ ...formData, brand: e.target.value })
+              }
+              className="w-full mt-1 px-4 py-2 border border-black/16 rounded-lg text-sm"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-text-label">
+              Form
+            </label>
+            <input
+              type="text"
+              placeholder="e.g., Softgel"
+              value={formData.form}
+              onChange={(e) =>
+                setFormData({ ...formData, form: e.target.value })
+              }
+              className="w-full mt-1 px-4 py-2 border border-black/16 rounded-lg text-sm"
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="text-xs font-semibold text-text-label">
+              Serving size
+            </label>
+            <input
+              type="text"
+              placeholder="e.g., 1 softgel"
+              value={formData.servingSize}
+              onChange={(e) =>
+                setFormData({ ...formData, servingSize: e.target.value })
+              }
+              className="w-full mt-1 px-4 py-2 border border-black/16 rounded-lg text-sm"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-text-label">
+              Default bottle size (pills)
+            </label>
+            <input
+              type="number"
+              min={1}
+              value={formData.jarSize || ""}
+              onChange={(e) => {
+                const jarSize = Math.max(0, parseInt(e.target.value) || 0);
+                setFormData({ ...formData, jarSize });
+                setBottleDraft((prev) => ({ ...prev, count: jarSize }));
+              }}
+              className="w-full mt-1 px-4 py-2 border border-black/16 rounded-lg font-mono text-sm"
+            />
+          </div>
+        </div>
+
+        <ImageUploader
+          imageUrl={formData.imageUrl}
+          searchQuery={formData.name}
+          onImageChange={(url) => setFormData({ ...formData, imageUrl: url })}
+        />
+
+        {/* Bottles */}
+        <div className="border border-black/10 rounded-lg p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold">Bottles</h3>
+            <span className="text-xs text-text-muted">
+              {bottles.length} added
+            </span>
           </div>
 
-          {dsldId && (
-            <div className="bg-primary-light border border-primary/30 rounded-lg px-4 py-3 text-sm flex items-start justify-between gap-3">
-              <div>
-                <span className="font-semibold text-primary">
-                  ✓ Linked to DSLD #{dsldId}
-                </span>
-                <p className="text-text-muted text-xs mt-0.5">
-                  {[formData.brand, formData.form, formData.servingSize]
-                    .filter(Boolean)
-                    .join(" · ")}
-                  {" — supplement facts & label image will be saved."}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setDsldId(null)}
-                className="text-xs text-text-muted hover:text-critical flex-shrink-0"
-              >
-                Unlink
-              </button>
-            </div>
-          )}
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs font-semibold text-text-label">
-                Brand
-              </label>
-              <input
-                type="text"
-                placeholder="e.g., Thorne"
-                value={formData.brand}
-                onChange={(e) =>
-                  setFormData({ ...formData, brand: e.target.value })
-                }
-                className="w-full mt-1 px-4 py-2 border border-black/16 rounded-lg text-sm"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-text-label">
-                Form
-              </label>
-              <input
-                type="text"
-                placeholder="e.g., Softgel"
-                value={formData.form}
-                onChange={(e) =>
-                  setFormData({ ...formData, form: e.target.value })
-                }
-                className="w-full mt-1 px-4 py-2 border border-black/16 rounded-lg text-sm"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs font-semibold text-text-label">
-                Serving size
-              </label>
-              <input
-                type="text"
-                placeholder="e.g., 1 softgel"
-                value={formData.servingSize}
-                onChange={(e) =>
-                  setFormData({ ...formData, servingSize: e.target.value })
-                }
-                className="w-full mt-1 px-4 py-2 border border-black/16 rounded-lg text-sm"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-text-label">
-                Default bottle size (pills)
-              </label>
-              <input
-                type="number"
-                min={1}
-                value={formData.jarSize || ""}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    jarSize: Math.max(0, parseInt(e.target.value) || 0),
-                  })
-                }
-                className="w-full mt-1 px-4 py-2 border border-black/16 rounded-lg font-mono text-sm"
-              />
-            </div>
-          </div>
-
-          <ImageUploader
-            imageUrl={formData.imageUrl}
-            searchQuery={formData.name}
-            onImageChange={(url) => setFormData({ ...formData, imageUrl: url })}
-          />
-
-          {/* Bottles */}
-          <div className="border border-black/10 rounded-lg p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold">Bottles</h3>
-              <span className="text-xs text-text-muted">
-                {bottles.length} added
-              </span>
-            </div>
-
-            {bottles.length > 0 && (
-              <div className="space-y-1">
-                {bottles.map((b, idx) => (
-                  <div
-                    key={idx}
-                    className="flex items-center gap-3 text-sm border border-black/10 rounded-lg px-3 py-2"
-                  >
-                    <span className="font-mono">{b.count} ct</span>
-                    <span className="font-mono">${b.price.toFixed(2)}</span>
-                    {b.purchaseUrl && (
-                      <span className="text-xs text-text-muted truncate">
-                        {storeLabel(b.purchaseUrl)}
-                      </span>
-                    )}
-                    <span className="text-xs text-text-muted ml-auto">
-                      {b.purchasedAt}
+          {bottles.length > 0 && (
+            <div className="space-y-1">
+              {bottles.map((b, idx) => (
+                <div
+                  key={idx}
+                  className="flex items-center gap-3 text-sm border border-black/10 rounded-lg px-3 py-2"
+                >
+                  <span className="font-mono">{b.count} ct</span>
+                  <span className="font-mono">${b.price.toFixed(2)}</span>
+                  {b.purchaseUrl && (
+                    <span className="text-xs text-text-muted truncate">
+                      {storeLabel(b.purchaseUrl)}
                     </span>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setBottles(bottles.filter((_, i) => i !== idx))
-                      }
-                      className="text-xs text-critical hover:underline"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div className="border-t border-black/10 pt-3 space-y-2">
-              <BottleFields value={bottleDraft} onChange={setBottleDraft} />
-              <button
-                type="button"
-                onClick={addBottleToList}
-                className="w-full px-3 py-2 border border-dashed border-primary/50 rounded-lg hover:bg-primary-light/50 transition-colors text-sm"
-              >
-                + Add this bottle
-              </button>
-            </div>
-
-            {bottles.length === 0 && (
-              <p className="text-xs text-text-muted">
-                Add at least one bottle to track stock & spend (you can also add
-                bottles later).
-              </p>
-            )}
-          </div>
-
-          {/* Dosages */}
-          {people && people.some((p) => p.status !== "disabled") && (
-            <div className="border-t border-black/10 pt-4">
-              <h3 className="text-sm font-semibold mb-3">
-                Who takes this? (optional)
-              </h3>
-              <div className="space-y-3">
-                {people
-                  .filter((p) => p.status !== "disabled")
-                  .map((person) => {
-                  const personDosage = dosages.find(
-                    (d) => d.personId === person._id
-                  );
-                  return (
-                    <div
-                      key={person._id}
-                      className="border border-black/10 rounded-lg p-3"
-                    >
-                      <div className="flex items-center gap-2 mb-2">
-                        <input
-                          type="checkbox"
-                          id={`person-${person._id}`}
-                          checked={!!personDosage}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setDosages([
-                                ...dosages,
-                                { personId: person._id, pillsPerWeek: 7 },
-                              ]);
-                            } else {
-                              setDosages(
-                                dosages.filter((d) => d.personId !== person._id)
-                              );
-                            }
-                          }}
-                          className="w-4 h-4"
-                        />
-                        <label
-                          htmlFor={`person-${person._id}`}
-                          className="text-sm font-medium"
-                        >
-                          {person.name}
-                        </label>
-                      </div>
-
-                      {personDosage && (
-                        <div className="ml-6">
-                          <DosageInput
-                            value={personDosage.pillsPerWeek}
-                            onChange={(pillsPerWeek) =>
-                              setDosages(
-                                dosages.map((d) =>
-                                  d.personId === person._id
-                                    ? { ...d, pillsPerWeek }
-                                    : d
-                                )
-                              )
-                            }
-                          />
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+                  )}
+                  <span className="text-xs text-text-muted ml-auto">
+                    {b.purchasedAt}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setBottles(bottles.filter((_, i) => i !== idx))
+                    }
+                    className="text-xs text-critical hover:underline"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
             </div>
           )}
 
-          <div className="flex gap-2 pt-4">
+          <div className="border-t border-black/10 pt-3 space-y-2">
+            <BottleFields value={bottleDraft} onChange={setBottleDraft} />
             <button
-              type="submit"
-              disabled={saving}
-              className="btn-primary flex-1 disabled:opacity-50"
+              type="button"
+              onClick={addBottleToList}
+              className="w-full px-3 py-2 border border-dashed border-primary/50 rounded-lg hover:bg-primary-light/50 transition-colors text-sm"
             >
-              {saving ? "Saving..." : "Save supplement"}
+              + Add this bottle
             </button>
-            <Link href="/supplements" className="btn-outline flex-1 text-center">
-              Cancel
-            </Link>
           </div>
-        </form>
-      )}
+
+          {bottles.length === 0 && (
+            <p className="text-xs text-text-muted">
+              Add at least one bottle to track stock & spend (you can also add
+              bottles later).
+            </p>
+          )}
+        </div>
+
+        {/* Dosages */}
+        {people && people.some((p) => p.status !== "disabled") && (
+          <div className="border-t border-black/10 pt-4">
+            <h3 className="text-sm font-semibold mb-3">
+              Who takes this? (optional)
+            </h3>
+            <div className="space-y-3">
+              {people
+                .filter((p) => p.status !== "disabled")
+                .map((person) => {
+                const personDosage = dosages.find(
+                  (d) => d.personId === person._id
+                );
+                return (
+                  <div
+                    key={person._id}
+                    className="border border-black/10 rounded-lg p-3"
+                  >
+                    <div className="flex items-center gap-2 mb-2">
+                      <input
+                        type="checkbox"
+                        id={`person-${person._id}`}
+                        checked={!!personDosage}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setDosages([
+                              ...dosages,
+                              { personId: person._id, pillsPerWeek: 7 },
+                            ]);
+                          } else {
+                            setDosages(
+                              dosages.filter((d) => d.personId !== person._id)
+                            );
+                          }
+                        }}
+                        className="w-4 h-4"
+                      />
+                      <label
+                        htmlFor={`person-${person._id}`}
+                        className="text-sm font-medium"
+                      >
+                        {person.name}
+                      </label>
+                    </div>
+
+                    {personDosage && (
+                      <div className="ml-6">
+                        <DosageInput
+                          value={personDosage.pillsPerWeek}
+                          onChange={(pillsPerWeek) =>
+                            setDosages(
+                              dosages.map((d) =>
+                                d.personId === person._id
+                                  ? { ...d, pillsPerWeek }
+                                  : d
+                              )
+                            )
+                          }
+                        />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        <div className="flex gap-2 pt-4">
+          <button
+            type="submit"
+            disabled={saving}
+            className="btn-primary flex-1 disabled:opacity-50"
+          >
+            {saving ? "Saving..." : "Save supplement"}
+          </button>
+          <Link href="/supplements" className="btn-outline flex-1 text-center">
+            Cancel
+          </Link>
+        </div>
+      </form>
 
       <div className="text-center">
         <Link

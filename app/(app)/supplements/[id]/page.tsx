@@ -5,12 +5,16 @@ import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id, Doc } from "@/convex/_generated/dataModel";
 import { ImageUploader } from "@/components/ImageUploader";
-import { DsldFindDetails, type DsldLabel } from "@/components/DsldFindDetails";
+import {
+  DsldFindDetails,
+  type DsldLabel,
+  type DsldFindDetailsHandle,
+} from "@/components/DsldFindDetails";
 import { SupplementFactsPanel } from "@/components/SupplementFactsPanel";
 import { DosageInput } from "@/components/DosageInput";
 import { BottleFields } from "@/components/BottleFields";
 import Link from "next/link";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   getSupplementStatus,
   getDaysLeft,
@@ -118,6 +122,8 @@ export default function SupplementDetailPage() {
     null
   );
   const [newDosagePillsPerWeek, setNewDosagePillsPerWeek] = useState(7);
+
+  const findDetailsRef = useRef<DsldFindDetailsHandle>(null);
 
   if (!supplement || !dosages || !people || !bottles || group === undefined) {
     return <div className="text-center py-12">Loading...</div>;
@@ -427,9 +433,16 @@ export default function SupplementDetailPage() {
                     onChange={(e) =>
                       setEditData({ ...editData, name: e.target.value })
                     }
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        findDetailsRef.current?.open();
+                      }
+                    }}
                     className="flex-1 px-3 py-2 border border-black/16 rounded-lg font-bold text-lg"
                   />
                   <DsldFindDetails
+                    ref={findDetailsRef}
                     initialQuery={editData.name}
                     onApply={applyDsldLabel}
                   />
