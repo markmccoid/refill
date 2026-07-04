@@ -14,6 +14,7 @@ const nav = [
   { label: "People", href: "/people" },
   { label: "Costs", href: "/costs" },
   { label: "Restock", href: "/restock" },
+  { label: "Insights", href: "/insights" },
 ];
 
 const AVATAR_GRADIENTS: Record<string, string> = {

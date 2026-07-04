@@ -18,6 +18,7 @@ import type * as dsld from "../dsld.js";
 import type * as groups from "../groups.js";
 import type * as households from "../households.js";
 import type * as http from "../http.js";
+import type * as insights from "../insights.js";
 import type * as migrations from "../migrations.js";
 import type * as people from "../people.js";
 import type * as restock from "../restock.js";
@@ -43,6 +44,7 @@ declare const fullApi: ApiFromModules<{
   groups: typeof groups;
   households: typeof households;
   http: typeof http;
+  insights: typeof insights;
   migrations: typeof migrations;
   people: typeof people;
   restock: typeof restock;
