@@ -45,6 +45,7 @@ export const listBySupplement = query({
 /**
  * Log a new (full) bottle purchase. Re-anchors first so existing bottles freeze
  * their current remaining, then appends the new bottle full at the new anchor.
+ * `qty` logs that many identical bottles (multi-bottle orders) in one pass.
  */
 export const add = mutation({
   args: {
@@ -53,9 +54,13 @@ export const add = mutation({
     price: v.number(),
     purchaseUrl: v.optional(v.string()),
     purchasedAt: v.optional(v.number()),
+    qty: v.optional(v.number()), // identical bottles to insert (default 1)
   },
   returns: v.id("bottles"),
-  async handler(ctx, { supplementId, count, price, purchaseUrl, purchasedAt }) {
+  async handler(
+    ctx,
+    { supplementId, count, price, purchaseUrl, purchasedAt, qty }
+  ) {
     const supplement = await requireSupplementAccess(ctx, supplementId);
     // A purchase URL feeds the retailer model (ADR-0006): match/create the
     // retailer by domain and write through the saved link.
@@ -65,17 +70,21 @@ export const add = mutation({
       : null;
     // Freeze existing bottles' remaining at the current rate before adding.
     await reanchorFor(ctx, supplementId);
-    const id = await ctx.db.insert("bottles", {
-      supplementId,
-      count,
-      price,
-      purchaseUrl: url || undefined,
-      retailerId: retailerId ?? undefined,
-      purchasedAt: purchasedAt ?? Date.now(),
-      remainingAtAnchor: count, // a fresh bottle is full at the new anchor
-    });
+    const n = Math.max(1, Math.min(99, Math.round(qty ?? 1)));
+    let id: Id<"bottles"> | null = null;
+    for (let i = 0; i < n; i++) {
+      id = await ctx.db.insert("bottles", {
+        supplementId,
+        count,
+        price,
+        purchaseUrl: url || undefined,
+        retailerId: retailerId ?? undefined,
+        purchasedAt: purchasedAt ?? Date.now(),
+        remainingAtAnchor: count, // a fresh bottle is full at the new anchor
+      });
+    }
     await syncAnchorCache(ctx, supplementId);
-    return id;
+    return id!;
   },
 });
 

@@ -140,6 +140,7 @@ function DsldLookupModal({
             </p>
           </div>
           <button
+            type="button"
             onClick={onClose}
             className="text-text-muted hover:text-text text-2xl leading-none"
           >
@@ -155,11 +156,19 @@ function DsldLookupModal({
               placeholder="Search by product or brand name..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && runSearch(query)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  // The modal can render inside a <form> (add supplement) —
+                  // without this, Enter here submits/saves the whole form.
+                  e.preventDefault();
+                  runSearch(query);
+                }
+              }}
               className="flex-1 px-4 py-2 border border-black/16 rounded-lg focus:ring-2 focus:ring-primary/20"
               autoFocus
             />
             <button
+              type="button"
               onClick={() => runSearch(query)}
               disabled={isLoading || !query.trim()}
               className="btn-primary disabled:opacity-50"
@@ -203,6 +212,7 @@ function DsldLookupModal({
                 const isSelecting = selectingId === hit.dsldId;
                 return (
                   <button
+                    type="button"
                     key={hit.dsldId}
                     onClick={() => handleSelect(hit)}
                     disabled={!!selectingId}
@@ -244,7 +254,7 @@ function DsldLookupModal({
           <span className="text-xs text-text-muted">
             {results.length > 0 && `${results.length} results`}
           </span>
-          <button onClick={onClose} className="btn-outline">
+          <button type="button" onClick={onClose} className="btn-outline">
             Cancel
           </button>
         </div>

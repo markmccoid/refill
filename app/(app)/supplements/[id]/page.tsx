@@ -106,6 +106,7 @@ export default function SupplementDetailPage() {
     purchaseUrl: "",
     purchasedAt: toDateInput(Date.now()),
   });
+  const [newBottleQty, setNewBottleQty] = useState(1);
   const [editingBottleId, setEditingBottleId] =
     useState<Id<"bottles"> | null>(null);
   const [editBottle, setEditBottle] = useState({
@@ -286,6 +287,7 @@ export default function SupplementDetailPage() {
         price: newBottle.price,
         purchaseUrl: newBottle.purchaseUrl || undefined,
         purchasedAt: fromDateInput(newBottle.purchasedAt),
+        qty: newBottleQty,
       });
       setAddingBottle(false);
       setNewBottle({
@@ -294,6 +296,7 @@ export default function SupplementDetailPage() {
         purchaseUrl: "",
         purchasedAt: toDateInput(Date.now()),
       });
+      setNewBottleQty(1);
     } catch (err) {
       console.error("Failed to add bottle:", err);
       setError("Failed to add bottle");
@@ -324,6 +327,19 @@ export default function SupplementDetailPage() {
     } finally {
       setSaving(false);
     }
+  };
+
+  // "Bought this again": open the add-bottle form pre-filled from an existing
+  // bottle (same size/price/store), dated today, ready to confirm.
+  const duplicateBottle = (bottle: Doc<"bottles">) => {
+    setNewBottle({
+      count: bottle.count,
+      price: bottle.price,
+      purchaseUrl: bottle.purchaseUrl ?? "",
+      purchasedAt: toDateInput(Date.now()),
+    });
+    setNewBottleQty(1);
+    setAddingBottle(true);
   };
 
   const handleRemoveBottle = async (id: Id<"bottles">) => {
@@ -629,7 +645,6 @@ export default function SupplementDetailPage() {
             </div>
             <ImageUploader
               imageUrl={editData.imageUrl}
-              searchQuery={editData.name || supplement.name}
               onImageChange={(url) =>
                 setEditData({ ...editData, imageUrl: url })
               }
@@ -765,6 +780,12 @@ export default function SupplementDetailPage() {
                       Edit
                     </button>
                     <button
+                      onClick={() => duplicateBottle(s.bottle)}
+                      className="text-primary hover:underline"
+                    >
+                      Duplicate
+                    </button>
+                    <button
                       onClick={() => handleRemoveBottle(id)}
                       disabled={saving}
                       className="text-critical hover:underline disabled:opacity-50"
@@ -898,9 +919,15 @@ export default function SupplementDetailPage() {
                     </span>
                     <span>{toDateInput(s.bottle.purchasedAt)}</span>
                     <button
+                      onClick={() => duplicateBottle(s.bottle)}
+                      className="text-primary hover:underline ml-auto"
+                    >
+                      Duplicate
+                    </button>
+                    <button
                       onClick={() => handleRemoveBottle(id)}
                       disabled={saving}
-                      className="text-critical hover:underline ml-auto disabled:opacity-50"
+                      className="text-critical hover:underline disabled:opacity-50"
                     >
                       Delete
                     </button>
@@ -915,14 +942,23 @@ export default function SupplementDetailPage() {
         <div className="border-t border-black/10 pt-4">
           {addingBottle ? (
             <div className="space-y-2">
-              <BottleFields value={newBottle} onChange={setNewBottle} />
+              <BottleFields
+                value={newBottle}
+                onChange={setNewBottle}
+                quantity={newBottleQty}
+                onQuantityChange={setNewBottleQty}
+              />
               <div className="flex gap-2">
                 <button
                   onClick={handleAddBottle}
                   disabled={saving}
                   className="btn-primary flex-1 text-sm py-1.5 disabled:opacity-50"
                 >
-                  {saving ? "Adding..." : "Add bottle"}
+                  {saving
+                    ? "Adding..."
+                    : newBottleQty > 1
+                      ? `Add ${newBottleQty} bottles`
+                      : "Add bottle"}
                 </button>
                 <button
                   onClick={() => setAddingBottle(false)}
@@ -941,6 +977,7 @@ export default function SupplementDetailPage() {
                   purchaseUrl: "",
                   purchasedAt: toDateInput(Date.now()),
                 });
+                setNewBottleQty(1);
                 setAddingBottle(true);
               }}
               className="w-full text-left px-3 py-2 border border-dashed border-primary/50 rounded-lg hover:bg-primary-light/50 transition-colors text-sm"

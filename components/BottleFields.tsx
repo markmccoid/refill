@@ -12,12 +12,21 @@ export interface BottleFieldsValue {
 export function BottleFields({
   value,
   onChange,
+  quantity,
+  onQuantityChange,
 }: {
   value: BottleFieldsValue;
   onChange: (v: BottleFieldsValue) => void;
+  // When set, shows a "number of bottles" stepper: buying 2–3 identical
+  // bottles in one order logs them without re-entering each one.
+  quantity?: number;
+  onQuantityChange?: (n: number) => void;
 }) {
   const set = (patch: Partial<BottleFieldsValue>) =>
     onChange({ ...value, ...patch });
+
+  const setQuantity = (n: number) =>
+    onQuantityChange?.(Math.max(1, Math.min(99, n)));
 
   return (
     <div className="space-y-2">
@@ -67,6 +76,45 @@ export function BottleFields({
           className="w-full mt-1 px-2 py-1.5 border border-black/16 rounded-lg font-mono text-sm"
         />
       </label>
+      {quantity !== undefined && onQuantityChange && (
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-text-label font-semibold">
+            Number of bottles
+            <span className="font-normal text-text-muted">
+              {" "}
+              (same price &amp; store)
+            </span>
+          </span>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setQuantity(quantity - 1)}
+              disabled={quantity <= 1}
+              aria-label="One less bottle"
+              className="w-8 h-8 border border-black/16 rounded-lg text-lg leading-none hover:bg-surface-alt disabled:opacity-40"
+            >
+              −
+            </button>
+            <input
+              type="number"
+              min="1"
+              max="99"
+              value={quantity}
+              onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
+              aria-label="Number of bottles"
+              className="w-14 px-2 py-1.5 border border-black/16 rounded-lg font-mono text-sm text-center"
+            />
+            <button
+              type="button"
+              onClick={() => setQuantity(quantity + 1)}
+              aria-label="One more bottle"
+              className="w-8 h-8 border border-black/16 rounded-lg text-lg leading-none hover:bg-surface-alt"
+            >
+              +
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

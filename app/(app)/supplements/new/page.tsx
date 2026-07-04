@@ -85,6 +85,7 @@ export default function AddSupplementPage() {
   const [bottleDraft, setBottleDraft] = useState<BottleFieldsValue>(
     emptyBottleDraft(120)
   );
+  const [bottleQty, setBottleQty] = useState(1);
 
   const [dosages, setDosages] = useState<DosageAssignment[]>([]);
 
@@ -93,20 +94,17 @@ export default function AddSupplementPage() {
   function applyDsldLabel(label: DsldLabel) {
     setDsldId(label.dsldId);
     setError("");
-    let jarSize = 0;
-    setFormData((prev) => {
-      jarSize = label.jarSizeSuggestion ?? prev.jarSize;
-      return {
-        ...prev,
-        name: label.fullName || prev.name,
-        brand: label.brandName ?? "",
-        form: label.form ?? "",
-        servingSize: label.servingSize ?? "",
-        category: label.category ?? "",
-        nutrients: label.nutrientHighlights,
-        jarSize,
-      };
-    });
+    const jarSize = label.jarSizeSuggestion ?? formData.jarSize;
+    setFormData((prev) => ({
+      ...prev,
+      name: label.fullName || prev.name,
+      brand: label.brandName ?? "",
+      form: label.form ?? "",
+      servingSize: label.servingSize ?? "",
+      category: label.category ?? "",
+      nutrients: label.nutrientHighlights,
+      jarSize,
+    }));
     setBottleDraft((prev) => ({ ...prev, count: jarSize }));
   }
 
@@ -115,8 +113,10 @@ export default function AddSupplementPage() {
       setError("Bottle count must be greater than 0");
       return;
     }
-    setBottles([...bottles, bottleDraft]);
+    // qty > 1 = several identical bottles from one order; each is its own row.
+    setBottles([...bottles, ...Array(bottleQty).fill(bottleDraft)]);
     setBottleDraft(emptyBottleDraft(formData.jarSize));
+    setBottleQty(1);
     setError("");
   }
 
@@ -197,7 +197,22 @@ export default function AddSupplementPage() {
         </div>
       )}
 
-      <form onSubmit={handleSave} className="space-y-4">
+      <form
+        onSubmit={handleSave}
+        onKeyDown={(e) => {
+          // Enter in any field must not save; only the Save button submits.
+          // (Buttons stay clickable via Enter — their default is a click.)
+          const target = e.target as HTMLElement;
+          if (
+            e.key === "Enter" &&
+            target.tagName !== "BUTTON" &&
+            target.tagName !== "TEXTAREA"
+          ) {
+            e.preventDefault();
+          }
+        }}
+        className="space-y-4"
+      >
         {/* Identity */}
         <div>
           <label className="text-xs font-semibold text-text-label">
@@ -322,7 +337,6 @@ export default function AddSupplementPage() {
 
         <ImageUploader
           imageUrl={formData.imageUrl}
-          searchQuery={formData.name}
           onImageChange={(url) => setFormData({ ...formData, imageUrl: url })}
         />
 
@@ -354,6 +368,16 @@ export default function AddSupplementPage() {
                   </span>
                   <button
                     type="button"
+                    onClick={() => {
+                      setBottleDraft({ ...b });
+                      setBottleQty(1);
+                    }}
+                    className="text-xs text-primary hover:underline"
+                  >
+                    Copy
+                  </button>
+                  <button
+                    type="button"
                     onClick={() =>
                       setBottles(bottles.filter((_, i) => i !== idx))
                     }
@@ -367,13 +391,20 @@ export default function AddSupplementPage() {
           )}
 
           <div className="border-t border-black/10 pt-3 space-y-2">
-            <BottleFields value={bottleDraft} onChange={setBottleDraft} />
+            <BottleFields
+              value={bottleDraft}
+              onChange={setBottleDraft}
+              quantity={bottleQty}
+              onQuantityChange={setBottleQty}
+            />
             <button
               type="button"
               onClick={addBottleToList}
               className="w-full px-3 py-2 border border-dashed border-primary/50 rounded-lg hover:bg-primary-light/50 transition-colors text-sm"
             >
-              + Add this bottle
+              {bottleQty > 1
+                ? `+ Add these ${bottleQty} bottles`
+                : "+ Add this bottle"}
             </button>
           </div>
 
