@@ -13,6 +13,11 @@ import {
 } from "@/components/DsldFindDetails";
 import { DosageInput } from "@/components/DosageInput";
 import { BottleFields, type BottleFieldsValue } from "@/components/BottleFields";
+import { FactsView } from "@/components/FactsView";
+import {
+  FactsEditorModal,
+  type FactsSavePayload,
+} from "@/components/FactsEditorModal";
 import Link from "next/link";
 import { Id } from "@/convex/_generated/dataModel";
 
@@ -62,12 +67,17 @@ export default function AddSupplementPage() {
   const createSupplement = useMutation(api.supplements.create);
   const createDosage = useMutation(api.dosages.create);
   const importFacts = useAction(api.dsld.importFacts);
+  const saveFacts = useMutation(api.supplementFacts.save);
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  // Set when the user picks a DSLD product, so we can save its facts on submit.
-  const [dsldId, setDsldId] = useState<string | null>(null);
+  // Facts staged for submit: the picked DSLD label (full parsed label so we
+  // can preview it before save), or a hand-entered draft. Mutually exclusive —
+  // a supplement has one facts record.
+  const [pendingLabel, setPendingLabel] = useState<DsldLabel | null>(null);
+  const [manualFacts, setManualFacts] = useState<FactsSavePayload | null>(null);
+  const [factsEditorOpen, setFactsEditorOpen] = useState(false);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -92,7 +102,8 @@ export default function AddSupplementPage() {
   const findDetailsRef = useRef<DsldFindDetailsHandle>(null);
 
   function applyDsldLabel(label: DsldLabel) {
-    setDsldId(label.dsldId);
+    setPendingLabel(label);
+    setManualFacts(null);
     setError("");
     const jarSize = label.jarSizeSuggestion ?? formData.jarSize;
     setFormData((prev) => ({
@@ -165,11 +176,17 @@ export default function AddSupplementPage() {
         });
       }
 
-      if (dsldId) {
+      if (pendingLabel) {
         try {
-          await importFacts({ supplementId, dsldId });
+          await importFacts({ supplementId, dsldId: pendingLabel.dsldId });
         } catch (err) {
           console.error("Failed to import DSLD facts:", err);
+        }
+      } else if (manualFacts) {
+        try {
+          await saveFacts({ supplementId, ...manualFacts });
+        } catch (err) {
+          console.error("Failed to save manual facts:", err);
         }
       }
 
@@ -233,26 +250,42 @@ export default function AddSupplementPage() {
                   findDetailsRef.current?.open();
                 }
               }}
-              className="flex-1 px-4 py-2 border border-black/16 rounded-lg font-medium text-sm"
+              className="flex-1 px-4 py-2 border border-border-strong rounded-lg font-medium text-sm"
             />
             <DsldFindDetails
               ref={findDetailsRef}
               initialQuery={formData.name}
               onApply={applyDsldLabel}
+              onManualEntry={() => setFactsEditorOpen(true)}
             />
           </div>
           <p className="text-xs text-text-muted mt-1">
             Type a name, then{" "}
             <span className="font-medium">Find Details</span> to pull the
-            official label & facts from the NIH database.
+            official label & facts from the NIH database
+            {!pendingLabel && !manualFacts ? (
+              <>
+                , or{" "}
+                <button
+                  type="button"
+                  onClick={() => setFactsEditorOpen(true)}
+                  className="text-primary hover:underline"
+                >
+                  enter the facts manually
+                </button>
+                .
+              </>
+            ) : (
+              "."
+            )}
           </p>
         </div>
 
-        {dsldId && (
+        {pendingLabel && (
           <div className="bg-primary-light border border-primary/30 rounded-lg px-4 py-3 text-sm flex items-start justify-between gap-3">
             <div>
               <span className="font-semibold text-primary">
-                ✓ Linked to DSLD #{dsldId}
+                ✓ Linked to DSLD #{pendingLabel.dsldId}
               </span>
               <p className="text-text-muted text-xs mt-0.5">
                 {[formData.brand, formData.form, formData.servingSize]
@@ -263,11 +296,59 @@ export default function AddSupplementPage() {
             </div>
             <button
               type="button"
-              onClick={() => setDsldId(null)}
+              onClick={() => setPendingLabel(null)}
               className="text-xs text-text-muted hover:text-critical flex-shrink-0"
             >
               Unlink
             </button>
+          </div>
+        )}
+
+        {manualFacts && (
+          <div className="bg-primary-light border border-primary/30 rounded-lg px-4 py-3 text-sm flex items-start justify-between gap-3">
+            <span className="font-semibold text-primary">
+              ✓ Facts entered manually — will be saved with the supplement.
+            </span>
+            <div className="flex gap-3 flex-shrink-0 text-xs">
+              <button
+                type="button"
+                onClick={() => setFactsEditorOpen(true)}
+                className="text-primary hover:underline"
+              >
+                Edit
+              </button>
+              <button
+                type="button"
+                onClick={() => setManualFacts(null)}
+                className="text-text-muted hover:text-critical"
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Preview the staged facts (DSLD pick or manual entry) before save. */}
+        {(pendingLabel || manualFacts) && (
+          <div className="border border-border-strong rounded-lg p-4 max-h-80 overflow-auto">
+            <h3 className="text-sm font-semibold mb-3">
+              Supplement Facts preview
+            </h3>
+            <FactsView
+              facts={
+                pendingLabel
+                  ? {
+                      servingSize: pendingLabel.servingSize,
+                      servingsPerContainer: pendingLabel.servingsPerContainer,
+                      rows: pendingLabel.rows,
+                      otherIngredients: pendingLabel.otherIngredients,
+                      offMarket: pendingLabel.offMarket,
+                      thumbnailUrl: pendingLabel.thumbnailUrl,
+                      dsldId: pendingLabel.dsldId,
+                    }
+                  : manualFacts!
+              }
+            />
           </div>
         )}
 
@@ -283,7 +364,7 @@ export default function AddSupplementPage() {
               onChange={(e) =>
                 setFormData({ ...formData, brand: e.target.value })
               }
-              className="w-full mt-1 px-4 py-2 border border-black/16 rounded-lg text-sm"
+              className="w-full mt-1 px-4 py-2 border border-border-strong rounded-lg text-sm"
             />
           </div>
           <div>
@@ -297,7 +378,7 @@ export default function AddSupplementPage() {
               onChange={(e) =>
                 setFormData({ ...formData, form: e.target.value })
               }
-              className="w-full mt-1 px-4 py-2 border border-black/16 rounded-lg text-sm"
+              className="w-full mt-1 px-4 py-2 border border-border-strong rounded-lg text-sm"
             />
           </div>
         </div>
@@ -314,7 +395,7 @@ export default function AddSupplementPage() {
               onChange={(e) =>
                 setFormData({ ...formData, servingSize: e.target.value })
               }
-              className="w-full mt-1 px-4 py-2 border border-black/16 rounded-lg text-sm"
+              className="w-full mt-1 px-4 py-2 border border-border-strong rounded-lg text-sm"
             />
           </div>
           <div>
@@ -330,7 +411,7 @@ export default function AddSupplementPage() {
                 setFormData({ ...formData, jarSize });
                 setBottleDraft((prev) => ({ ...prev, count: jarSize }));
               }}
-              className="w-full mt-1 px-4 py-2 border border-black/16 rounded-lg font-mono text-sm"
+              className="w-full mt-1 px-4 py-2 border border-border-strong rounded-lg font-mono text-sm"
             />
           </div>
         </div>
@@ -341,7 +422,7 @@ export default function AddSupplementPage() {
         />
 
         {/* Bottles */}
-        <div className="border border-black/10 rounded-lg p-4 space-y-3">
+        <div className="border border-border-strong rounded-lg p-4 space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold">Bottles</h3>
             <span className="text-xs text-text-muted">
@@ -354,7 +435,7 @@ export default function AddSupplementPage() {
               {bottles.map((b, idx) => (
                 <div
                   key={idx}
-                  className="flex items-center gap-3 text-sm border border-black/10 rounded-lg px-3 py-2"
+                  className="flex items-center gap-3 text-sm border border-border-strong rounded-lg px-3 py-2"
                 >
                   <span className="font-mono">{b.count} ct</span>
                   <span className="font-mono">${b.price.toFixed(2)}</span>
@@ -390,7 +471,7 @@ export default function AddSupplementPage() {
             </div>
           )}
 
-          <div className="border-t border-black/10 pt-3 space-y-2">
+          <div className="border-t border-border-strong pt-3 space-y-2">
             <BottleFields
               value={bottleDraft}
               onChange={setBottleDraft}
@@ -418,7 +499,7 @@ export default function AddSupplementPage() {
 
         {/* Dosages */}
         {people && people.some((p) => p.status !== "disabled") && (
-          <div className="border-t border-black/10 pt-4">
+          <div className="border-t border-border-strong pt-4">
             <h3 className="text-sm font-semibold mb-3">
               Who takes this? (optional)
             </h3>
@@ -432,7 +513,7 @@ export default function AddSupplementPage() {
                 return (
                   <div
                     key={person._id}
-                    className="border border-black/10 rounded-lg p-3"
+                    className="border border-border-strong rounded-lg p-3"
                   >
                     <div className="flex items-center gap-2 mb-2">
                       <input
@@ -506,6 +587,18 @@ export default function AddSupplementPage() {
           ← Back to supplements
         </Link>
       </div>
+
+      {factsEditorOpen && (
+        <FactsEditorModal
+          initial={manualFacts}
+          onSave={(payload) => {
+            // Stage the draft; it's written after the supplement is created.
+            setManualFacts(payload);
+            setPendingLabel(null);
+          }}
+          onClose={() => setFactsEditorOpen(false)}
+        />
+      )}
     </div>
   );
 }

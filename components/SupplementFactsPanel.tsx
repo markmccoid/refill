@@ -1,131 +1,165 @@
 "use client";
 
-import { useQuery } from "convex/react";
+import { useState } from "react";
+import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
+import { FactsView, factsSourceLabel } from "@/components/FactsView";
+import { FactsEditorModal } from "@/components/FactsEditorModal";
+import { DsldFindDetails, type DsldLabel } from "@/components/DsldFindDetails";
 
 export function SupplementFactsPanel({
   supplementId,
+  supplementName,
 }: {
   supplementId: Id<"supplements">;
+  /** Seeds the DSLD search in the empty state. */
+  supplementName: string;
 }) {
   const facts = useQuery(api.supplementFacts.getBySupplementId, {
     supplementId,
   });
+  const saveFacts = useMutation(api.supplementFacts.save);
+  const removeFacts = useMutation(api.supplementFacts.remove);
+  const importFacts = useAction(api.dsld.importFacts);
 
-  // Loading or no DSLD data linked — render nothing.
-  if (facts === undefined || facts === null) return null;
+  const [editing, setEditing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  if (facts === undefined) return null; // loading
+
+  // Facts affect only this panel here — picking a DSLD product imports
+  // immediately (identity fields are managed by the Edit flow above).
+  const handleImport = async (dsldId: string) => {
+    setBusy(true);
+    setError("");
+    try {
+      await importFacts({ supplementId, dsldId });
+    } catch (err) {
+      console.error("Failed to import DSLD facts:", err);
+      setError("Failed to import facts from DSLD. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleRevert = async () => {
+    if (!facts?.dsldId) return;
+    if (
+      !confirm(
+        `Discard your edits and re-import the original facts from DSLD #${facts.dsldId}?`
+      )
+    ) {
+      return;
+    }
+    await handleImport(facts.dsldId);
+  };
+
+  const handleRemove = async () => {
+    if (
+      !confirm(
+        "Remove the supplement facts (and saved label files) from this supplement?"
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      await removeFacts({ supplementId });
+    } catch (err) {
+      console.error("Failed to remove facts:", err);
+      setError("Failed to remove facts. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <div className="card p-6 space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-bold">Supplement Facts</h2>
-        {facts.offMarket && (
-          <span className="px-2 py-0.5 bg-black/5 text-text-muted text-xs rounded font-medium">
+        {facts?.offMarket && (
+          <span className="px-2 py-0.5 bg-text/5 text-text-muted text-xs rounded font-medium">
             off market
           </span>
         )}
       </div>
 
-      {(facts.servingSize || facts.servingsPerContainer != null) && (
-        <div className="text-sm border-b-2 border-black/80 pb-2">
-          {facts.servingSize && (
-            <div className="font-semibold">
-              Serving Size {facts.servingSize}
-            </div>
-          )}
-          {facts.servingsPerContainer != null && (
-            <div className="text-text-muted">
-              Servings Per Container {facts.servingsPerContainer}
-            </div>
-          )}
-        </div>
-      )}
+      {error && <p className="text-critical text-sm">{error}</p>}
 
-      {/* Facts rows */}
-      {facts.rows.length > 0 && (
-        <div className="text-sm">
-          <div className="flex justify-between text-[11px] font-semibold text-text-muted border-b border-black/30 pb-1">
-            <span>Amount Per Serving</span>
-            <span>% DV</span>
-          </div>
-          <div className="divide-y divide-black/5">
-            {facts.rows.map((row, i) => (
-              <div
-                key={i}
-                className="flex justify-between items-baseline py-1.5"
-                style={{ paddingLeft: `${row.level * 16}px` }}
-              >
-                <span
-                  className={row.level === 0 ? "font-medium" : "text-text-muted"}
-                >
-                  {row.name}
-                  {row.amount != null && (
-                    <span className="ml-2 font-mono text-text">
-                      {row.operator ? `${row.operator} ` : ""}
-                      {row.amount}
-                      {row.unit ? ` ${row.unit}` : ""}
-                    </span>
-                  )}
-                </span>
-                <span className="font-mono text-text-muted ml-3 flex-shrink-0">
-                  {row.dvPercent != null
-                    ? `${row.dvPercent}%`
-                    : row.dvFootnote
-                      ? "†"
-                      : ""}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {facts.otherIngredients && (
-        <div className="text-xs text-text-muted border-t border-black/10 pt-3">
-          <span className="font-semibold text-text-label">
-            Other ingredients:{" "}
-          </span>
-          {facts.otherIngredients}
-        </div>
-      )}
-
-      {/* Label image / back panel */}
-      {(facts.thumbnailUrl || facts.pdfUrl) && (
-        <div className="border-t border-black/10 pt-4 flex items-center gap-4">
-          {facts.thumbnailUrl && (
-            <a
-              href={facts.pdfUrl || facts.thumbnailUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="block flex-shrink-0"
+      {facts === null ? (
+        // Empty state: no facts yet — offer both ways in.
+        <div className="space-y-3">
+          <p className="text-sm text-text-muted">
+            No supplement facts saved yet. Pull them from the NIH label
+            database, or copy them off the bottle yourself.
+          </p>
+          <div className="flex gap-2">
+            <DsldFindDetails
+              initialQuery={supplementName}
+              onApply={(label: DsldLabel) => handleImport(label.dsldId)}
+              buttonLabel={busy ? "Importing..." : "Find in DSLD"}
+              onManualEntry={() => setEditing(true)}
+            />
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              disabled={busy}
+              className="btn-outline disabled:opacity-50"
             >
-              <img
-                src={facts.thumbnailUrl}
-                alt="Label thumbnail"
-                className="h-20 rounded border border-black/10 object-contain bg-surface-alt hover:border-primary transition-colors"
-              />
-            </a>
-          )}
-          <div className="text-sm">
-            {facts.pdfUrl ? (
-              <a
-                href={facts.pdfUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-primary hover:underline font-medium"
-              >
-                View full label (PDF) →
-              </a>
-            ) : (
-              <span className="text-text-muted">Label image saved</span>
-            )}
-            <p className="text-xs text-text-muted mt-1">
-              Source: DSLD #{facts.dsldId}
-              {facts.upcSku ? ` · UPC ${facts.upcSku}` : ""}
-            </p>
+              Enter manually
+            </button>
           </div>
         </div>
+      ) : (
+        <>
+          <FactsView facts={facts} />
+
+          {/* Provenance + actions */}
+          <div className="border-t border-border-strong pt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+            <span className="text-text-muted">{factsSourceLabel(facts)}</span>
+            <div className="ml-auto flex gap-3">
+              <button
+                type="button"
+                onClick={() => setEditing(true)}
+                disabled={busy}
+                className="text-primary hover:underline disabled:opacity-50"
+              >
+                Edit facts
+              </button>
+              {facts.edited && facts.dsldId && (
+                <button
+                  type="button"
+                  onClick={handleRevert}
+                  disabled={busy}
+                  className="text-primary hover:underline disabled:opacity-50"
+                >
+                  {busy ? "Reverting..." : "Revert to DSLD"}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handleRemove}
+                disabled={busy}
+                className="text-critical hover:underline disabled:opacity-50"
+              >
+                Remove facts
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {editing && (
+        <FactsEditorModal
+          initial={facts}
+          onSave={async (payload) => {
+            await saveFacts({ supplementId, ...payload });
+          }}
+          onClose={() => setEditing(false)}
+        />
       )}
     </div>
   );

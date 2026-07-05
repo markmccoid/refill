@@ -23,6 +23,8 @@ interface DsldFindDetailsProps {
   onApply: (label: DsldLabel) => void;
   buttonLabel?: string;
   buttonClassName?: string;
+  /** When set, the no-results state offers "Enter facts manually" (closes the modal, then calls this). */
+  onManualEntry?: () => void;
 }
 
 export const DsldFindDetails = forwardRef<
@@ -34,6 +36,7 @@ export const DsldFindDetails = forwardRef<
     onApply,
     buttonLabel = "Find Details",
     buttonClassName = "btn-outline whitespace-nowrap",
+    onManualEntry,
   },
   ref
 ) {
@@ -58,6 +61,14 @@ export const DsldFindDetails = forwardRef<
             onApply(label);
             setOpen(false);
           }}
+          onManualEntry={
+            onManualEntry
+              ? () => {
+                  setOpen(false);
+                  onManualEntry();
+                }
+              : undefined
+          }
         />
       )}
     </>
@@ -68,10 +79,12 @@ function DsldLookupModal({
   initialQuery,
   onClose,
   onApply,
+  onManualEntry,
 }: {
   initialQuery: string;
   onClose: () => void;
   onApply: (label: DsldLabel) => void;
+  onManualEntry?: () => void;
 }) {
   const searchDsld = useAction(api.dsld.search);
   const getLabel = useAction(api.dsld.getLabel);
@@ -132,7 +145,7 @@ function DsldLookupModal({
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
       <div className="relative z-10 bg-surface rounded-lg max-w-2xl w-full max-h-[85vh] overflow-hidden flex flex-col shadow-card">
         {/* Header */}
-        <div className="border-b border-black/10 p-6 flex items-center justify-between flex-shrink-0">
+        <div className="border-b border-border-strong p-6 flex items-center justify-between flex-shrink-0">
           <div>
             <h2 className="text-lg font-bold">Find supplement details</h2>
             <p className="text-xs text-text-muted mt-0.5">
@@ -149,7 +162,7 @@ function DsldLookupModal({
         </div>
 
         {/* Search bar */}
-        <div className="p-6 border-b border-black/10 flex-shrink-0">
+        <div className="p-6 border-b border-border-strong flex-shrink-0">
           <div className="flex gap-2">
             <input
               type="text"
@@ -164,7 +177,7 @@ function DsldLookupModal({
                   runSearch(query);
                 }
               }}
-              className="flex-1 px-4 py-2 border border-black/16 rounded-lg focus:ring-2 focus:ring-primary/20"
+              className="flex-1 px-4 py-2 border border-border-strong rounded-lg focus:ring-2 focus:ring-primary/20"
               autoFocus
             />
             <button
@@ -201,8 +214,19 @@ function DsldLookupModal({
                 No matches found in DSLD.
               </p>
               <p className="text-text-muted text-xs">
-                Try a different term, or close this and enter details manually.
+                {onManualEntry
+                  ? "Try a different term, or enter the facts yourself."
+                  : "Try a different term, or close this and enter details manually."}
               </p>
+              {onManualEntry && (
+                <button
+                  type="button"
+                  onClick={onManualEntry}
+                  className="btn-outline mt-3"
+                >
+                  Enter facts manually
+                </button>
+              )}
             </div>
           )}
 
@@ -216,7 +240,7 @@ function DsldLookupModal({
                     key={hit.dsldId}
                     onClick={() => handleSelect(hit)}
                     disabled={!!selectingId}
-                    className="w-full flex items-center gap-3 text-left p-3 border border-black/10 rounded-lg hover:border-primary hover:bg-primary-light/30 transition-colors disabled:opacity-60"
+                    className="w-full flex items-center gap-3 text-left p-3 border border-border-strong rounded-lg hover:border-primary hover:bg-primary-light/30 transition-colors disabled:opacity-60"
                   >
                     <DsldThumb url={hit.thumbnailUrl} alt={hit.fullName} />
                     <div className="flex-1 min-w-0">
@@ -225,7 +249,7 @@ function DsldLookupModal({
                           {hit.fullName || "Unnamed product"}
                         </span>
                         {hit.offMarket && (
-                          <span className="px-1.5 py-0.5 bg-black/5 text-text-muted text-[10px] rounded font-medium flex-shrink-0">
+                          <span className="px-1.5 py-0.5 bg-text/5 text-text-muted text-[10px] rounded font-medium flex-shrink-0">
                             off market
                           </span>
                         )}
@@ -250,7 +274,7 @@ function DsldLookupModal({
         </div>
 
         {/* Footer */}
-        <div className="border-t border-black/10 p-4 flex justify-between items-center flex-shrink-0">
+        <div className="border-t border-border-strong p-4 flex justify-between items-center flex-shrink-0">
           <span className="text-xs text-text-muted">
             {results.length > 0 && `${results.length} results`}
           </span>
@@ -268,7 +292,7 @@ function DsldThumb({ url, alt }: { url: string; alt: string }) {
   const [failed, setFailed] = useState(false);
   if (failed || !url) {
     return (
-      <div className="w-12 h-12 flex-shrink-0 rounded bg-surface-alt border border-black/10 flex items-center justify-center text-text-muted text-[10px]">
+      <div className="w-12 h-12 flex-shrink-0 rounded bg-surface-alt border border-border-strong flex items-center justify-center text-text-muted text-[10px]">
         no img
       </div>
     );
@@ -279,7 +303,7 @@ function DsldThumb({ url, alt }: { url: string; alt: string }) {
       alt={alt}
       loading="lazy"
       onError={() => setFailed(true)}
-      className="w-12 h-12 flex-shrink-0 rounded object-cover bg-surface-alt border border-black/10"
+      className="w-12 h-12 flex-shrink-0 rounded object-cover bg-surface-alt border border-border-strong"
     />
   );
 }

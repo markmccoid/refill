@@ -99,7 +99,12 @@ export default defineSchema({
 
   supplementFacts: defineTable({
     supplementId: v.id("supplements"),
-    dsldId: v.string(),
+    // Provenance: "dsld" = imported from the NIH label DB, "manual" = user-entered.
+    // Missing (pre-migration docs) means "dsld". `edited` marks DSLD facts the
+    // user has modified — the dsldId link is kept so they can revert.
+    source: v.optional(v.union(v.literal("dsld"), v.literal("manual"))),
+    edited: v.optional(v.boolean()),
+    dsldId: v.optional(v.string()),
     fullName: v.string(),
     brandName: v.optional(v.string()),
     form: v.optional(v.string()),
@@ -123,7 +128,7 @@ export default defineSchema({
       })
     ),
     otherIngredients: v.optional(v.string()),
-    raw: v.string(), // frozen DSLD label JSON snapshot (stringified)
+    raw: v.optional(v.string()), // frozen DSLD label JSON snapshot (absent for manual facts)
     thumbnailStorageId: v.optional(v.id("_storage")),
     pdfStorageId: v.optional(v.id("_storage")),
     fetchedAt: v.number(),

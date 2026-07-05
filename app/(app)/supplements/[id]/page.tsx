@@ -72,6 +72,12 @@ export default function SupplementDetailPage() {
     api.groups.getForSupplement,
     supplement ? { supplementId } : "skip"
   );
+  // Only used to warn before a DSLD re-import clobbers hand-edited facts
+  // (the facts panel itself runs its own copy of this query).
+  const facts = useQuery(
+    api.supplementFacts.getBySupplementId,
+    supplement ? { supplementId } : "skip"
+  );
 
   const updateSupplement = useMutation(api.supplements.update);
   const removeSupplement = useMutation(api.supplements.remove);
@@ -238,7 +244,14 @@ export default function SupplementDetailPage() {
       });
 
       // Attach/refresh DSLD facts + label images if a product was picked.
-      if (pendingDsldId) {
+      // Hand-edited facts are user work — confirm before replacing them.
+      if (
+        pendingDsldId &&
+        (!facts?.edited ||
+          confirm(
+            `Replace your edited supplement facts with DSLD #${pendingDsldId}?`
+          ))
+      ) {
         try {
           await importFacts({ supplementId, dsldId: pendingDsldId });
         } catch (err) {
@@ -435,7 +448,7 @@ export default function SupplementDetailPage() {
       {/* Main Info Card */}
       <div className="card p-6 space-y-4">
         {supplement.imageUrl && (
-          <div className="w-32 h-32 bg-surface-alt rounded-lg overflow-hidden border border-black/10">
+          <div className="w-32 h-32 bg-surface-alt rounded-lg overflow-hidden border border-border-strong">
             <img
               src={supplement.imageUrl}
               alt={supplement.name}
@@ -461,7 +474,7 @@ export default function SupplementDetailPage() {
                         findDetailsRef.current?.open();
                       }
                     }}
-                    className="flex-1 px-3 py-2 border border-black/16 rounded-lg font-bold text-lg"
+                    className="flex-1 px-3 py-2 border border-border-strong rounded-lg font-bold text-lg"
                   />
                   <DsldFindDetails
                     ref={findDetailsRef}
@@ -509,7 +522,7 @@ export default function SupplementDetailPage() {
           </div>
         </div>
 
-        <div className="border-t border-black/10 pt-4">
+        <div className="border-t border-border-strong pt-4">
           <div className="grid grid-cols-3 gap-4">
             <div>
               <label className="text-xs text-text-label font-semibold">
@@ -559,7 +572,7 @@ export default function SupplementDetailPage() {
 
         {/* Aggregated purchase links from all bottles */}
         {!isEditing && purchaseLinks.length > 0 && (
-          <div className="border-t border-black/10 pt-4">
+          <div className="border-t border-border-strong pt-4">
             <div className="text-xs text-text-label font-semibold mb-2">
               Buy again
             </div>
@@ -581,7 +594,7 @@ export default function SupplementDetailPage() {
 
         {/* Identity edit fields */}
         {isEditing && (
-          <div className="border-t border-black/10 pt-4 space-y-3">
+          <div className="border-t border-border-strong pt-4 space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-xs font-semibold text-text-label">
@@ -593,7 +606,7 @@ export default function SupplementDetailPage() {
                   onChange={(e) =>
                     setEditData({ ...editData, brand: e.target.value })
                   }
-                  className="w-full mt-1 px-3 py-2 border border-black/16 rounded-lg text-sm"
+                  className="w-full mt-1 px-3 py-2 border border-border-strong rounded-lg text-sm"
                 />
               </div>
               <div>
@@ -606,7 +619,7 @@ export default function SupplementDetailPage() {
                   onChange={(e) =>
                     setEditData({ ...editData, form: e.target.value })
                   }
-                  className="w-full mt-1 px-3 py-2 border border-black/16 rounded-lg text-sm"
+                  className="w-full mt-1 px-3 py-2 border border-border-strong rounded-lg text-sm"
                 />
               </div>
             </div>
@@ -620,7 +633,7 @@ export default function SupplementDetailPage() {
                 onChange={(e) =>
                   setEditData({ ...editData, servingSize: e.target.value })
                 }
-                className="w-full mt-1 px-3 py-2 border border-black/16 rounded-lg text-sm"
+                className="w-full mt-1 px-3 py-2 border border-border-strong rounded-lg text-sm"
               />
             </div>
             <div>
@@ -637,7 +650,7 @@ export default function SupplementDetailPage() {
                     jarSize: Math.max(0, parseInt(e.target.value) || 0),
                   })
                 }
-                className="w-32 mt-1 px-3 py-2 border border-black/16 rounded-lg font-mono text-sm"
+                className="w-32 mt-1 px-3 py-2 border border-border-strong rounded-lg font-mono text-sm"
               />
               <p className="text-xs text-text-muted mt-1">
                 Just the default for new bottles. Edit stock in Bottles below.
@@ -653,7 +666,7 @@ export default function SupplementDetailPage() {
         )}
 
         {/* Action Buttons */}
-        <div className="border-t border-black/10 pt-4 flex gap-2">
+        <div className="border-t border-border-strong pt-4 flex gap-2">
           {!isEditing ? (
             <button
               onClick={() => {
@@ -720,7 +733,7 @@ export default function SupplementDetailPage() {
             return (
               <div
                 key={id}
-                className="border border-black/10 rounded-lg p-3 space-y-2"
+                className="border border-border-strong rounded-lg p-3 space-y-2"
               >
                 <div className="flex items-center gap-3">
                   <span
@@ -794,7 +807,7 @@ export default function SupplementDetailPage() {
                     </button>
                   </div>
                 ) : (
-                  <div className="border-t border-black/10 pt-2 space-y-2">
+                  <div className="border-t border-border-strong pt-2 space-y-2">
                     <div className="grid grid-cols-2 gap-2">
                       <label className="text-xs text-text-label font-semibold">
                         Price
@@ -809,7 +822,7 @@ export default function SupplementDetailPage() {
                               price: parseFloat(e.target.value) || 0,
                             })
                           }
-                          className="w-full mt-1 px-2 py-1.5 border border-black/16 rounded-lg font-mono text-sm"
+                          className="w-full mt-1 px-2 py-1.5 border border-border-strong rounded-lg font-mono text-sm"
                         />
                       </label>
                       <label className="text-xs text-text-label font-semibold">
@@ -824,7 +837,7 @@ export default function SupplementDetailPage() {
                               count: Math.max(0, parseInt(e.target.value) || 0),
                             })
                           }
-                          className="w-full mt-1 px-2 py-1.5 border border-black/16 rounded-lg font-mono text-sm"
+                          className="w-full mt-1 px-2 py-1.5 border border-border-strong rounded-lg font-mono text-sm"
                         />
                       </label>
                       <label className="text-xs text-text-label font-semibold">
@@ -838,7 +851,7 @@ export default function SupplementDetailPage() {
                               purchasedAt: e.target.value,
                             })
                           }
-                          className="w-full mt-1 px-2 py-1.5 border border-black/16 rounded-lg text-sm"
+                          className="w-full mt-1 px-2 py-1.5 border border-border-strong rounded-lg text-sm"
                         />
                       </label>
                       <label className="text-xs text-text-label font-semibold">
@@ -857,7 +870,7 @@ export default function SupplementDetailPage() {
                               ),
                             })
                           }
-                          className="w-full mt-1 px-2 py-1.5 border border-black/16 rounded-lg font-mono text-sm"
+                          className="w-full mt-1 px-2 py-1.5 border border-border-strong rounded-lg font-mono text-sm"
                         />
                       </label>
                     </div>
@@ -873,7 +886,7 @@ export default function SupplementDetailPage() {
                             purchaseUrl: e.target.value,
                           })
                         }
-                        className="w-full mt-1 px-2 py-1.5 border border-black/16 rounded-lg font-mono text-sm"
+                        className="w-full mt-1 px-2 py-1.5 border border-border-strong rounded-lg font-mono text-sm"
                       />
                     </label>
                     <div className="flex gap-2">
@@ -939,7 +952,7 @@ export default function SupplementDetailPage() {
         )}
 
         {/* Add bottle */}
-        <div className="border-t border-black/10 pt-4">
+        <div className="border-t border-border-strong pt-4">
           {addingBottle ? (
             <div className="space-y-2">
               <BottleFields
@@ -988,8 +1001,11 @@ export default function SupplementDetailPage() {
         </div>
       </div>
 
-      {/* DSLD Supplement Facts (renders only if facts are linked) */}
-      <SupplementFactsPanel supplementId={supplementId} />
+      {/* Supplement Facts — saved facts, or the DSLD/manual empty state */}
+      <SupplementFactsPanel
+        supplementId={supplementId}
+        supplementName={supplement.name}
+      />
 
       {/* Dosages Section */}
       <div className="card p-6 space-y-4">
@@ -1003,7 +1019,7 @@ export default function SupplementDetailPage() {
               return (
                 <div
                   key={dosage._id}
-                  className={`flex items-center justify-between border border-black/10 rounded-lg p-3 ${
+                  className={`flex items-center justify-between border border-border-strong rounded-lg p-3 ${
                     paused ? "opacity-60" : ""
                   }`}
                 >
@@ -1050,14 +1066,14 @@ export default function SupplementDetailPage() {
         {/* Add Dosage — disabled for grouped brands (dosage lives on the group,
             so editing here would create an unintended per-brand override). */}
         {group ? (
-          <div className="border-t border-black/10 pt-4 text-sm text-text-muted">
+          <div className="border-t border-border-strong pt-4 text-sm text-text-muted">
             Dosage for grouped brands is managed on the group.{" "}
             <Link href="/supplements" className="text-primary hover:underline">
               Manage group →
             </Link>
           </div>
         ) : (
-        <div className="border-t border-black/10 pt-4">
+        <div className="border-t border-border-strong pt-4">
           {addingDosageFor ? (
             <div className="space-y-3">
               <p className="text-sm font-medium">

@@ -48,7 +48,7 @@ export default function InsightsPage() {
       <Header />
 
       {/* Mode toggle */}
-      <div className="flex items-center gap-1 p-1 bg-surface-alt rounded-lg w-fit border border-black/7">
+      <div className="flex items-center gap-1 p-1 bg-surface-alt rounded-lg w-fit border border-border">
         <button
           onClick={() => setMode("compare")}
           className={`px-3 py-1.5 text-sm rounded-md font-medium transition-colors ${
@@ -73,10 +73,10 @@ export default function InsightsPage() {
 
       {!anyoneHasData && (
         <div className="card p-6 text-sm text-text-muted">
-          None of your supplements have label data yet. Use the{" "}
-          <span className="font-medium text-text">Find details</span> lookup on
-          a supplement to pull its Supplement Facts from DSLD — that&apos;s what
-          these charts are built from.
+          None of your supplements have label data yet. Open a supplement and
+          add its Supplement Facts — pull them from DSLD with{" "}
+          <span className="font-medium text-text">Find details</span> or enter
+          them manually — that&apos;s what these charts are built from.
         </div>
       )}
 
@@ -96,7 +96,7 @@ export default function InsightsPage() {
       {mode === "detail" && (
         <div className="space-y-5">
           {/* Person tabs */}
-          <div className="flex gap-2 border-b border-black/10">
+          <div className="flex gap-2 border-b border-border-strong">
             {people.map((p, i) => (
               <button
                 key={p.personId}
@@ -119,7 +119,7 @@ export default function InsightsPage() {
         </div>
       )}
 
-      <p className="text-[11px] text-text-faint pt-4 border-t border-black/7">
+      <p className="text-[11px] text-text-faint pt-4 border-t border-border">
         Sums each supplement&apos;s label %DV scaled by how many servings/day the
         person takes. Grouped supplements count only the currently-open brand.
         For informational use only — not medical advice, and %DV has limits for

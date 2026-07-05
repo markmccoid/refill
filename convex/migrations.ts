@@ -103,6 +103,25 @@ export const backfillBottles = internalMutation({
 });
 
 /**
+ * Backfill `source` on supplementFacts (ADR-0007-era facts editing). Every
+ * pre-existing facts record came from a DSLD import. Idempotent.
+ */
+export const backfillFactsSource = internalMutation({
+  args: {},
+  returns: v.object({ updated: v.number() }),
+  async handler(ctx) {
+    let updated = 0;
+    for (const f of await ctx.db.query("supplementFacts").collect()) {
+      if (f.source === undefined) {
+        await ctx.db.patch(f._id, { source: "dsld", edited: false });
+        updated++;
+      }
+    }
+    return { updated };
+  },
+});
+
+/**
  * Move the legacy supplement-level `purchaseUrl` onto its bottles (purchase
  * links are now per-bottle). Idempotent — only fills bottles that lack a URL.
  */
