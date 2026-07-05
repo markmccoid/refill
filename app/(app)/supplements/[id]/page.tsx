@@ -82,7 +82,9 @@ export default function SupplementDetailPage() {
   const updateSupplement = useMutation(api.supplements.update);
   const removeSupplement = useMutation(api.supplements.remove);
   const createDosage = useMutation(api.dosages.create);
+  const updateDosage = useMutation(api.dosages.update);
   const removeDosage = useMutation(api.dosages.remove);
+  const setGroupDosage = useMutation(api.groups.setDosage);
   const addBottle = useMutation(api.bottles.add);
   const updateBottle = useMutation(api.bottles.update);
   const removeBottle = useMutation(api.bottles.remove);
@@ -129,6 +131,9 @@ export default function SupplementDetailPage() {
     null
   );
   const [newDosagePillsPerWeek, setNewDosagePillsPerWeek] = useState(7);
+  const [editingDosageId, setEditingDosageId] =
+    useState<Id<"dosages"> | null>(null);
+  const [editDosagePillsPerWeek, setEditDosagePillsPerWeek] = useState(7);
 
   const findDetailsRef = useRef<DsldFindDetailsHandle>(null);
 
@@ -392,13 +397,55 @@ export default function SupplementDetailPage() {
     }
   };
 
-  const handleRemoveDosage = async (dosageId: Id<"dosages">) => {
+  const handleRemoveDosage = async (dosage: (typeof dosages)[number]) => {
     setSaving(true);
     try {
-      await removeDosage({ id: dosageId });
+      if (group) {
+        await setGroupDosage({
+          groupId: group._id,
+          personId: dosage.personId,
+          pillsPerWeek: 0,
+        });
+      } else {
+        await removeDosage({ id: dosage._id });
+      }
+      setEditingDosageId(null);
     } catch (err) {
       console.error("Failed to remove dosage:", err);
       setError("Failed to remove dosage");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const startEditDosage = (dosage: (typeof dosages)[number]) => {
+    setEditingDosageId(dosage._id);
+    setEditDosagePillsPerWeek(getDosageWeekly(dosage));
+    setAddingDosageFor(null);
+  };
+
+  const handleSaveDosage = async (dosage: (typeof dosages)[number]) => {
+    setSaving(true);
+    setError("");
+    try {
+      if (group) {
+        await setGroupDosage({
+          groupId: group._id,
+          personId: dosage.personId,
+          pillsPerWeek: editDosagePillsPerWeek,
+        });
+      } else if (editDosagePillsPerWeek <= 0) {
+        await removeDosage({ id: dosage._id });
+      } else {
+        await updateDosage({
+          id: dosage._id,
+          pillsPerWeek: editDosagePillsPerWeek,
+        });
+      }
+      setEditingDosageId(null);
+    } catch (err) {
+      console.error("Failed to save dosage:", err);
+      setError("Failed to save dosage");
     } finally {
       setSaving(false);
     }
@@ -1016,14 +1063,17 @@ export default function SupplementDetailPage() {
             {dosages.map((dosage) => {
               const person = people.find((p) => p._id === dosage.personId);
               const paused = !dosage.personActive;
+              const weekly = getDosageWeekly(dosage);
+              const isEditingDosage = editingDosageId === dosage._id;
               return (
                 <div
                   key={dosage._id}
-                  className={`flex items-center justify-between border border-border-strong rounded-lg p-3 ${
+                  className={`border border-border-strong rounded-lg p-3 ${
                     paused ? "opacity-60" : ""
                   }`}
                 >
-                  <div>
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
                     <div className="font-medium">
                       {person?.name}
                       {paused && (
@@ -1035,25 +1085,59 @@ export default function SupplementDetailPage() {
                     </div>
                     <div className="text-sm text-text-muted">
                       {getDosageWeekly(dosage)} per week ·{" "}
-                      {Math.round((getDosageWeekly(dosage) / 7) * 100) / 100}/day
+                      {Math.round((weekly / 7) * 100) / 100}/day
                     </div>
+                    </div>
+                    {paused ? (
+                      <span className="text-xs text-text-muted">
+                        Re-enable in People
+                      </span>
+                    ) : (
+                      <div className="flex items-center gap-3">
+                        {!isEditingDosage && (
+                          <button
+                            onClick={() => startEditDosage(dosage)}
+                            className="text-sm text-primary hover:underline"
+                          >
+                            Edit
+                          </button>
+                        )}
+                          <button
+                            onClick={() => handleRemoveDosage(dosage)}
+                            disabled={saving}
+                            className="text-sm text-critical hover:text-critical/80 disabled:opacity-50"
+                          >
+                            Remove
+                          </button>
+                      </div>
+                    )}
                   </div>
-                  {paused ? (
-                    <span className="text-xs text-text-muted">
-                      Re-enable in People
-                    </span>
-                  ) : group ? (
-                    <span className="text-xs text-text-muted">
-                      set in group
-                    </span>
-                  ) : (
-                    <button
-                      onClick={() => handleRemoveDosage(dosage._id)}
-                      disabled={saving}
-                      className="text-sm text-critical hover:text-critical/80 disabled:opacity-50"
-                    >
-                      Remove
-                    </button>
+                  {isEditingDosage && (
+                    <div className="mt-3 space-y-3 border-t border-border-strong pt-3">
+                      <DosageInput
+                        value={editDosagePillsPerWeek}
+                        onChange={setEditDosagePillsPerWeek}
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleSaveDosage(dosage)}
+                          disabled={saving}
+                          className="btn-primary flex-1 text-sm py-1.5 disabled:opacity-50"
+                        >
+                          {saving
+                            ? "Saving..."
+                            : editDosagePillsPerWeek <= 0
+                              ? "Remove"
+                              : "Save"}
+                        </button>
+                        <button
+                          onClick={() => setEditingDosageId(null)}
+                          className="btn-outline flex-1 text-sm py-1.5"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
                   )}
                 </div>
               );
