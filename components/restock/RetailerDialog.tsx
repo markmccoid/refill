@@ -89,7 +89,7 @@ export function RetailerDialog({
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. iHerb"
               autoFocus
-              className="mt-1 w-full px-3 py-2 text-sm border border-black/15 rounded-lg bg-surface"
+              className="mt-1 w-full px-3 py-2 text-sm border border-border-strong rounded-lg bg-surface"
             />
           </label>
           <label className="block">
@@ -101,7 +101,7 @@ export function RetailerDialog({
               value={baseUrl}
               onChange={(e) => setBaseUrl(e.target.value)}
               placeholder="https://www.iherb.com"
-              className="mt-1 w-full px-3 py-2 text-sm border border-black/15 rounded-lg bg-surface"
+              className="mt-1 w-full px-3 py-2 text-sm border border-border-strong rounded-lg bg-surface"
             />
           </label>
           <label className="block">
@@ -115,7 +115,7 @@ export function RetailerDialog({
               value={threshold}
               onChange={(e) => setThreshold(e.target.value)}
               placeholder="e.g. 35"
-              className="mt-1 w-full px-3 py-2 text-sm border border-black/15 rounded-lg bg-surface"
+              className="mt-1 w-full px-3 py-2 text-sm border border-border-strong rounded-lg bg-surface"
             />
             <span className="block text-[11px] text-text-muted mt-1">
               Leave blank if you don&apos;t know — blank means unknown, not $0.
@@ -133,7 +133,7 @@ export function RetailerDialog({
           <button
             onClick={submit}
             disabled={!name.trim() || busy}
-            className="px-4 py-2 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg disabled:opacity-50"
+            className="px-4 py-2 text-sm font-semibold bg-primary hover:bg-primary-dark text-white rounded-lg disabled:opacity-50"
           >
             {busy ? "Saving…" : retailer ? "Save" : "Add retailer"}
           </button>

@@ -82,13 +82,13 @@ export default function RestockPage() {
         <div className="flex gap-2">
           <button
             onClick={() => setRetailerDialog({ retailer: null })}
-            className="px-4 py-2 text-sm font-medium border border-black/15 rounded-lg hover:bg-black/5"
+            className="px-4 py-2 text-sm font-medium border border-border-strong rounded-lg hover:bg-text/5"
           >
             + Retailer
           </button>
           <button
             onClick={() => setShowPicker(true)}
-            className="px-4 py-2 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg"
+            className="px-4 py-2 text-sm font-semibold bg-primary hover:bg-primary-dark text-white rounded-lg"
           >
             Choose supplements
           </button>
@@ -96,7 +96,7 @@ export default function RestockPage() {
       </div>
 
       {/* Settings knobs (ADR-0006): urgency window + coverage target */}
-      <div className="flex items-center gap-6 text-sm text-text-muted bg-surface-alt border border-black/7 rounded-lg px-4 py-2.5">
+      <div className="flex items-center gap-6 text-sm text-text-muted bg-surface-alt border border-border rounded-lg px-4 py-2.5">
         <SettingsKnob
           label="Flag items running out within"
           suffix="days"
@@ -119,12 +119,12 @@ export default function RestockPage() {
         {/* Plan items */}
         <div className="xl:col-span-2 space-y-4">
           {plan.items.length === 0 ? (
-            <div className="border border-dashed border-black/15 rounded-xl p-10 text-center text-sm text-text-muted">
+            <div className="border border-dashed border-border-strong rounded-xl p-10 text-center text-sm text-text-muted">
               Your restock plan is empty.
               <br />
               <button
                 onClick={() => setShowPicker(true)}
-                className="mt-3 text-emerald-700 font-semibold hover:underline"
+                className="mt-3 text-primary font-semibold hover:underline"
               >
                 Choose supplements to restock
               </button>
@@ -160,7 +160,7 @@ export default function RestockPage() {
             Order totals
           </h2>
           {orders.size === 0 ? (
-            <div className="border border-dashed border-black/15 rounded-xl p-6 text-center text-xs text-text-muted">
+            <div className="border border-dashed border-border-strong rounded-xl p-6 text-center text-xs text-text-muted">
               Select a retailer on an item to start an order.
             </div>
           ) : (
@@ -233,7 +233,7 @@ function SettingsKnob({
           const v = parseInt(e.target.value, 10);
           if (Number.isFinite(v) && v > 0 && v !== value) onCommit(v);
         }}
-        className="w-16 px-2 py-1 text-sm border border-black/15 rounded-md bg-surface text-text text-center"
+        className="w-16 px-2 py-1 text-sm border border-border-strong rounded-md bg-surface text-text text-center"
       />
       {suffix}
     </label>
@@ -262,7 +262,7 @@ function ItemCard({
         });
 
   return (
-    <div className="bg-surface border border-black/10 rounded-xl p-5 space-y-4">
+    <div className="bg-surface border border-border-strong rounded-xl p-5 space-y-4">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
@@ -307,7 +307,7 @@ function ItemCard({
                 if (Number.isFinite(v) && v >= 1 && v !== item.qty)
                   setQty({ id: item._id, qty: v });
               }}
-              className="w-14 px-2 py-1 text-sm border border-black/15 rounded-md bg-surface text-text text-center"
+              className="w-14 px-2 py-1 text-sm border border-border-strong rounded-md bg-surface text-text text-center"
             />
             <span title="Enough to cover your coverage target">
               (suggested {item.recommendedQty})
@@ -324,11 +324,11 @@ function ItemCard({
       </div>
 
       {!hasRetailers ? (
-        <div className="border border-dashed border-black/15 rounded-lg p-4 text-center text-xs text-text-muted">
+        <div className="border border-dashed border-border-strong rounded-lg p-4 text-center text-xs text-text-muted">
           Add a retailer to start comparing prices.{" "}
           <button
             onClick={onAddRetailer}
-            className="text-emerald-700 font-semibold hover:underline"
+            className="text-primary font-semibold hover:underline"
           >
             + Add retailer
           </button>
@@ -389,7 +389,7 @@ function OfferRow({
 
   return (
     <tr
-      className={`border-t border-black/5 ${offer.selected ? "bg-emerald-50" : ""}`}
+      className={`border-t border-border ${offer.selected ? "bg-primary-light" : ""}`}
     >
       {showBrand && (
         <td className="py-2 pr-2 text-xs">
@@ -418,7 +418,7 @@ function OfferRow({
               if (e.key === "Enter") commitLink(e.currentTarget.value);
               if (e.key === "Escape") setEditingLink(false);
             }}
-            className="w-40 px-2 py-1 text-xs border border-black/15 rounded-md bg-surface"
+            className="w-40 px-2 py-1 text-xs border border-border-strong rounded-md bg-surface"
           />
         ) : offer.url ? (
           <span className="flex items-center gap-1.5">
@@ -426,7 +426,7 @@ function OfferRow({
               href={offer.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-emerald-700 font-semibold text-xs hover:underline whitespace-nowrap"
+              className="text-primary font-semibold text-xs hover:underline whitespace-nowrap"
             >
               Check Site ↗
             </a>
@@ -441,7 +441,7 @@ function OfferRow({
         ) : (
           <button
             onClick={() => setEditingLink(true)}
-            className="text-xs text-text-muted hover:text-emerald-700"
+            className="text-xs text-text-muted hover:text-primary"
           >
             + Add link
           </button>
@@ -471,7 +471,7 @@ function OfferRow({
               });
             }
           }}
-          className="w-20 px-2 py-1 text-sm border border-black/15 rounded-md bg-surface text-right"
+          className="w-20 px-2 py-1 text-sm border border-border-strong rounded-md bg-surface text-right"
         />
       </td>
       <td className="py-2 pr-2 text-right text-xs whitespace-nowrap">
@@ -509,12 +509,12 @@ function OfferRow({
           title={offer.selected ? "Deselect" : "Buy from this retailer"}
           className={`w-5 h-5 rounded-full border-2 inline-flex items-center justify-center transition-colors ${
             offer.selected
-              ? "border-emerald-600 bg-emerald-600"
-              : "border-black/20 hover:border-emerald-600"
+              ? "border-primary bg-primary"
+              : "border-border-strong hover:border-primary"
           }`}
         >
           {offer.selected && (
-            <span className="w-2 h-2 rounded-full bg-white" />
+            <span className="w-2 h-2 rounded-full bg-surface" />
           )}
         </button>
       </td>
@@ -544,7 +544,7 @@ function OrderCard({
   const gap = threshold !== undefined ? threshold - subtotal : null;
 
   return (
-    <div className="bg-surface border border-black/10 rounded-xl p-4 space-y-3">
+    <div className="bg-surface border border-border-strong rounded-xl p-4 space-y-3">
       <div className="flex items-center justify-between">
         <h3 className="font-bold text-sm">{retailer.name}</h3>
         <button
@@ -578,7 +578,7 @@ function OrderCard({
         ))}
       </ul>
 
-      <div className="border-t border-black/7 pt-2 flex justify-between text-sm font-bold">
+      <div className="border-t border-border pt-2 flex justify-between text-sm font-bold">
         <span>Subtotal</span>
         <span>{money(subtotal)}</span>
       </div>
@@ -586,18 +586,18 @@ function OrderCard({
       {threshold === undefined ? (
         <button
           onClick={onEdit}
-          className="text-[11px] text-text-muted hover:text-emerald-700"
+          className="text-[11px] text-text-muted hover:text-primary"
         >
           Free-shipping threshold not set — add one
         </button>
       ) : gap !== null && gap > 0 ? (
         <div>
-          <p className="text-[11px] text-amber-600 font-semibold">
+          <p className="text-[11px] text-low font-semibold">
             {money(gap)} away from free shipping ({money(threshold)})
           </p>
-          <div className="mt-1 h-1.5 bg-black/8 rounded-full overflow-hidden">
+          <div className="mt-1 h-1.5 bg-text/10 rounded-full overflow-hidden">
             <div
-              className="h-full bg-amber-500 rounded-full"
+              className="h-full bg-low rounded-full"
               style={{
                 width: `${Math.min(100, (subtotal / threshold) * 100)}%`,
               }}
@@ -605,7 +605,7 @@ function OrderCard({
           </div>
         </div>
       ) : (
-        <p className="text-[11px] text-emerald-700 font-semibold">
+        <p className="text-[11px] text-primary font-semibold">
           ✓ Free shipping ({money(threshold)} threshold met)
         </p>
       )}
@@ -619,7 +619,7 @@ function OrderCard({
 
       <button
         onClick={onPurchase}
-        className="w-full px-3 py-2 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg"
+        className="w-full px-3 py-2 text-sm font-semibold bg-primary hover:bg-primary-dark text-white rounded-lg"
       >
         Mark as Purchased
       </button>

@@ -130,7 +130,7 @@ export function RunOutTimeline({ rows }: { rows: TimelineRow[] }) {
               <div className="relative h-7 rounded-full bg-black/[0.04]">
                 <div
                   className={`absolute inset-y-0 left-0 rounded-full flex items-center justify-end px-3 ${
-                    runOut ? BAR_BG[r.status] : "bg-black/10"
+                    runOut ? BAR_BG[r.status] : "bg-text/10"
                   }`}
                   style={{ width: `${barPct}%`, minWidth: "3.5rem" }}
                 >

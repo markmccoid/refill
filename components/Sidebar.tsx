@@ -7,6 +7,7 @@ import { useQuery } from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
 import { api } from "@/convex/_generated/api";
 import { useHousehold } from "@/hooks/useHousehold";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 const nav = [
   { label: "Dashboard", href: "/dashboard" },
@@ -44,9 +45,9 @@ export function Sidebar() {
   };
 
   return (
-    <aside className="w-48 bg-surface-alt border-r border-black/7 p-4 flex flex-col">
+    <aside className="w-48 bg-surface-alt border-r border-border p-4 flex flex-col">
       {/* Brand */}
-      <div className="mb-1 pb-1 border-b border-black/7 ">
+      <div className="mb-1 pb-1 border-b border-border ">
         <div className="flex items-center">
           <Image
             src="/refill-logo.png"
@@ -69,7 +70,7 @@ export function Sidebar() {
               className={`block px-3 py-2 rounded-md text-sm transition-colors ${
                 isActive
                   ? "bg-primary-light text-primary font-semibold"
-                  : "text-text-muted hover:text-text hover:bg-black/5 font-medium"
+                  : "text-text-muted hover:text-text hover:bg-text/5 font-medium"
               }`}
               style={{
                 fontSize: "13.5px",
@@ -82,7 +83,7 @@ export function Sidebar() {
                 {item.href === "/restock" &&
                   typeof restockBadge === "number" &&
                   restockBadge > 0 && (
-                    <span className="ml-2 min-w-5 h-5 px-1.5 rounded-full bg-amber-500 text-white text-[11px] font-bold flex items-center justify-center">
+                    <span className="ml-2 min-w-5 h-5 px-1.5 rounded-full bg-low text-white text-[11px] font-bold flex items-center justify-center">
                       {restockBadge}
                     </span>
                   )}
@@ -93,7 +94,7 @@ export function Sidebar() {
       </nav>
 
       {/* People + sign out */}
-      <div className="pt-4 border-t border-black/7 space-y-3">
+      <div className="pt-4 border-t border-border space-y-3">
         {people && people.length > 0 && (
           <div className="flex items-center gap-2">
             {people.map((p) => (
@@ -109,6 +110,7 @@ export function Sidebar() {
             ))}
           </div>
         )}
+        <ThemeToggle />
         <button
           onClick={handleSignOut}
           className="w-full text-left text-xs font-medium text-text-muted hover:text-text transition-colors"

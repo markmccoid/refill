@@ -123,7 +123,7 @@ export function PersonRegimen({
               return (
                 <div
                   key={s._id}
-                  className="border border-black/10 rounded-lg p-3"
+                  className="border border-border-strong rounded-lg p-3"
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div>{nameLink(s)}</div>
@@ -151,7 +151,7 @@ export function PersonRegimen({
                     </div>
                   </div>
                   {isEditing && (
-                    <div className="mt-3 space-y-3 border-t border-black/10 pt-3">
+                    <div className="mt-3 space-y-3 border-t border-border-strong pt-3">
                       <DosageInput value={draft} onChange={setDraft} />
                       <div className="flex gap-2">
                         <button
@@ -194,7 +194,7 @@ export function PersonRegimen({
                 return (
                   <div
                     key={s._id}
-                    className="border border-dashed border-black/15 rounded-lg p-3"
+                    className="border border-dashed border-border-strong rounded-lg p-3"
                   >
                     <div className="flex items-center justify-between gap-3">
                       <div className="text-text-muted">{nameLink(s)}</div>
@@ -208,7 +208,7 @@ export function PersonRegimen({
                       )}
                     </div>
                     {isAdding && (
-                      <div className="mt-3 space-y-3 border-t border-black/10 pt-3">
+                      <div className="mt-3 space-y-3 border-t border-border-strong pt-3">
                         <DosageInput value={draft} onChange={setDraft} />
                         <div className="flex gap-2">
                           <button

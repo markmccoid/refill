@@ -24,7 +24,7 @@ function PasswordInput({
         required
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full border border-black/15 rounded-lg px-3 py-2 pr-10 text-sm"
+        className="w-full border border-border-strong rounded-lg px-3 py-2 pr-10 text-sm"
       />
       <button
         type="button"
@@ -116,7 +116,7 @@ export default function SignInPage() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="mt-1 w-full border border-black/15 rounded-lg px-3 py-2 text-sm"
+              className="mt-1 w-full border border-border-strong rounded-lg px-3 py-2 text-sm"
             />
           </div>
           <div>

@@ -35,7 +35,7 @@ export function PersonDetail({ person }: { person: PersonNutrients }) {
           <h3 className="text-xs font-semibold text-text-label uppercase tracking-wide mb-2">
             Daily Value coverage
           </h3>
-          <div className="card divide-y divide-black/5 px-4 py-2">
+          <div className="card divide-y divide-border px-4 py-2">
             {person.nutrients.map((n) => (
               <NutrientBar key={n.key} nutrient={n} showSources />
             ))}
@@ -54,7 +54,7 @@ export function PersonDetail({ person }: { person: PersonNutrients }) {
           <h3 className="text-xs font-semibold text-text-label uppercase tracking-wide mb-2">
             No Daily Value established
           </h3>
-          <div className="card divide-y divide-black/5 px-4 py-1">
+          <div className="card divide-y divide-border px-4 py-1">
             {person.noDv.map((n, i) => (
               <div
                 key={i}
@@ -94,7 +94,7 @@ export function PersonDetail({ person }: { person: PersonNutrients }) {
           <h3 className="text-xs font-semibold text-text-label uppercase tracking-wide mb-2">
             Not counted
           </h3>
-          <div className="card divide-y divide-black/5 px-4 py-1">
+          <div className="card divide-y divide-border px-4 py-1">
             {person.skipped.map((s, i) => (
               <div
                 key={i}
@@ -106,8 +106,8 @@ export function PersonDetail({ person }: { person: PersonNutrients }) {
             ))}
           </div>
           <p className="text-[11px] text-text-faint mt-1.5">
-            Use the &ldquo;Find details&rdquo; lookup on a supplement to pull its
-            label data from DSLD.
+            Open a supplement to add its facts — via the &ldquo;Find
+            details&rdquo; DSLD lookup or manual entry.
           </p>
         </div>
       )}

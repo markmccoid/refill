@@ -67,7 +67,7 @@ export function DosageInput({
             onChange={(e) =>
               onChange(Math.max(0, (parseFloat(e.target.value) || 0) * 7))
             }
-            className="w-24 px-3 py-2 border border-black/16 rounded-lg font-mono text-sm"
+            className="w-24 px-3 py-2 border border-border-strong rounded-lg font-mono text-sm"
           />
           <span className="text-sm text-text-muted">pills per day</span>
         </div>
@@ -82,7 +82,7 @@ export function DosageInput({
             onChange={(e) =>
               onChange(Math.max(0, parseFloat(e.target.value) || 0))
             }
-            className="w-24 px-3 py-2 border border-black/16 rounded-lg font-mono text-sm"
+            className="w-24 px-3 py-2 border border-border-strong rounded-lg font-mono text-sm"
           />
           <span className="text-sm text-text-muted">pills per week</span>
         </div>
@@ -103,7 +103,7 @@ export function DosageInput({
                   setWeekdays(next);
                   onChange(next.reduce((s, n) => s + n, 0));
                 }}
-                className="w-9 px-1 py-1.5 border border-black/16 rounded text-center font-mono text-xs"
+                className="w-9 px-1 py-1.5 border border-border-strong rounded text-center font-mono text-xs"
               />
             </div>
           ))}

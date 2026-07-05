@@ -191,7 +191,7 @@ export function ImageUploader({
       {/* Image Preview */}
       {imageUrl && (
         <div className="flex items-center gap-3">
-          <div className="relative w-24 h-24 flex-shrink-0 bg-surface-alt rounded-lg overflow-hidden border border-black/10">
+          <div className="relative w-24 h-24 flex-shrink-0 bg-surface-alt rounded-lg overflow-hidden border border-border-strong">
             <img
               src={imageUrl}
               alt="Preview"
@@ -221,7 +221,7 @@ export function ImageUploader({
           className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
             isDragging
               ? "border-primary bg-primary-light/30"
-              : "border-black/20 bg-surface-alt hover:border-primary/50"
+              : "border-border-strong bg-surface-alt hover:border-primary/50"
           }`}
         >
           <div className="space-y-2">
@@ -251,7 +251,7 @@ export function ImageUploader({
                   applyUrlDraft();
                 }
               }}
-              className="flex-1 px-3 py-1.5 border border-black/16 rounded-lg text-sm"
+              className="flex-1 px-3 py-1.5 border border-border-strong rounded-lg text-sm"
             />
             <button
               type="button"

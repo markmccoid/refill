@@ -32,9 +32,6 @@ interface SupplementListItemProps {
   };
 }
 
-const PLACEHOLDER_BG =
-  "linear-gradient(45deg, #f0f0f0 25%, #e0e0e0 25%, #e0e0e0 50%, #f0f0f0 50%, #f0f0f0 75%, #e0e0e0 75%, #e0e0e0)";
-
 export function SupplementListItem({ supplement }: SupplementListItemProps) {
   const dosages = useQuery(
     api.dosages.listBySupplementId,
@@ -73,8 +70,9 @@ export function SupplementListItem({ supplement }: SupplementListItemProps) {
     >
       {/* Image Thumbnail */}
       <div
-        className="w-20 h-20 flex-shrink-0 rounded-lg overflow-hidden border border-black/10 bg-gray-100"
-        style={!supplement.imageUrl ? { backgroundImage: PLACEHOLDER_BG } : {}}
+        className={`w-20 h-20 flex-shrink-0 rounded-lg overflow-hidden border border-border-strong bg-surface-alt ${
+          !supplement.imageUrl ? "img-placeholder" : ""
+        }`}
       >
         {supplement.imageUrl && (
           <img

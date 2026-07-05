@@ -17,10 +17,10 @@ export function PillBottle({ fillPct, status }: PillBottleProps) {
     <div className="flex flex-col items-center">
       <div className="relative w-20 h-32">
         {/* Cap */}
-        <div className="absolute top-0 left-1/2 transform -translate-x-1/2 w-10 h-3 bg-surface-alt rounded-t-full border border-black/13"></div>
+        <div className="absolute top-0 left-1/2 transform -translate-x-1/2 w-10 h-3 bg-surface-alt rounded-t-full border border-border-strong"></div>
 
         {/* Bottle Body */}
-        <div className="absolute top-3 left-0 right-0 w-full h-28 bg-surface-alt border-2 border-black/13 rounded-b-md overflow-hidden">
+        <div className="absolute top-3 left-0 right-0 w-full h-28 bg-surface-alt border-2 border-border-strong rounded-b-md overflow-hidden">
           {/* Fill */}
           <div
             className={`absolute bottom-0 left-0 right-0 w-full ${statusBgColor[status]} opacity-85 transition-all`}

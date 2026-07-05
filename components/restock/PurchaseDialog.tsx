@@ -120,7 +120,7 @@ export function PurchaseDialog({
         className="bg-surface rounded-xl shadow-xl w-full max-w-xl max-h-[85vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-6 pt-5 pb-3 border-b border-black/7">
+        <div className="px-6 pt-5 pb-3 border-b border-border">
           <h2 className="text-lg font-bold">
             Mark purchased at {retailerName}
           </h2>
@@ -139,7 +139,7 @@ export function PurchaseDialog({
               <div
                 key={l.itemId}
                 className={`border rounded-lg p-3 ${
-                  s.include ? "border-black/10" : "border-black/5 opacity-50"
+                  s.include ? "border-border-strong" : "border-border opacity-50"
                 }`}
               >
                 <label className="flex items-center gap-2 cursor-pointer">
@@ -149,7 +149,7 @@ export function PurchaseDialog({
                     onChange={(e) =>
                       patch(l.itemId, { include: e.target.checked })
                     }
-                    className="w-4 h-4 accent-emerald-600"
+                    className="w-4 h-4 accent-primary"
                   />
                   <span className="text-sm font-semibold flex-1">
                     {l.itemName}
@@ -177,7 +177,7 @@ export function PurchaseDialog({
                         min="1"
                         value={s.qty}
                         onChange={(e) => patch(l.itemId, { qty: e.target.value })}
-                        className="mt-0.5 w-full px-2 py-1.5 text-sm border border-black/15 rounded-md bg-surface"
+                        className="mt-0.5 w-full px-2 py-1.5 text-sm border border-border-strong rounded-md bg-surface"
                       />
                     </label>
                     <label className="block">
@@ -192,7 +192,7 @@ export function PurchaseDialog({
                         onChange={(e) =>
                           patch(l.itemId, { price: e.target.value })
                         }
-                        className="mt-0.5 w-full px-2 py-1.5 text-sm border border-black/15 rounded-md bg-surface"
+                        className="mt-0.5 w-full px-2 py-1.5 text-sm border border-border-strong rounded-md bg-surface"
                       />
                     </label>
                     <label className="block">
@@ -206,7 +206,7 @@ export function PurchaseDialog({
                         onChange={(e) =>
                           patch(l.itemId, { count: e.target.value })
                         }
-                        className="mt-0.5 w-full px-2 py-1.5 text-sm border border-black/15 rounded-md bg-surface"
+                        className="mt-0.5 w-full px-2 py-1.5 text-sm border border-border-strong rounded-md bg-surface"
                       />
                     </label>
                   </div>
@@ -216,7 +216,7 @@ export function PurchaseDialog({
           })}
         </div>
 
-        <div className="px-6 py-4 border-t border-black/7 flex items-center gap-3">
+        <div className="px-6 py-4 border-t border-border flex items-center gap-3">
           <label className="flex items-center gap-2 text-sm">
             <span className="text-xs font-semibold text-text-muted">
               Purchased
@@ -225,7 +225,7 @@ export function PurchaseDialog({
               type="date"
               value={date}
               onChange={(e) => setDate(e.target.value)}
-              className="px-2 py-1.5 text-sm border border-black/15 rounded-md bg-surface"
+              className="px-2 py-1.5 text-sm border border-border-strong rounded-md bg-surface"
             />
           </label>
           <span className="flex-1 text-right text-sm font-bold">
@@ -240,7 +240,7 @@ export function PurchaseDialog({
           <button
             onClick={confirm}
             disabled={!valid || busy}
-            className="px-4 py-2 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg disabled:opacity-50"
+            className="px-4 py-2 text-sm font-semibold bg-primary hover:bg-primary-dark text-white rounded-lg disabled:opacity-50"
           >
             {busy ? "Recording…" : "Confirm purchase"}
           </button>

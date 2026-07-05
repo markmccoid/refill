@@ -98,7 +98,7 @@ export function CreateGroupDialog({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Fish Oil"
-              className="mt-1 w-full border border-black/15 rounded-lg px-3 py-2 text-sm"
+              className="mt-1 w-full border border-border-strong rounded-lg px-3 py-2 text-sm"
             />
           </div>
           <div>
@@ -109,7 +109,7 @@ export function CreateGroupDialog({
               value={category}
               onChange={(e) => setCategory(e.target.value)}
               placeholder="Essential fatty acid"
-              className="mt-1 w-full border border-black/15 rounded-lg px-3 py-2 text-sm"
+              className="mt-1 w-full border border-border-strong rounded-lg px-3 py-2 text-sm"
             />
           </div>
         </div>
@@ -127,7 +127,7 @@ export function CreateGroupDialog({
               {candidates.map((c) => (
                 <label
                   key={c._id}
-                  className="flex items-center gap-3 border border-black/10 rounded-lg p-2.5 cursor-pointer hover:bg-surface-alt"
+                  className="flex items-center gap-3 border border-border-strong rounded-lg p-2.5 cursor-pointer hover:bg-surface-alt"
                 >
                   <input
                     type="checkbox"

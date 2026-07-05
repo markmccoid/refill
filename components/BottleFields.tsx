@@ -40,7 +40,7 @@ export function BottleFields({
             onChange={(e) =>
               set({ count: Math.max(0, parseInt(e.target.value) || 0) })
             }
-            className="w-full mt-1 px-2 py-1.5 border border-black/16 rounded-lg font-mono text-sm"
+            className="w-full mt-1 px-2 py-1.5 border border-border-strong rounded-lg font-mono text-sm"
           />
         </label>
         <label className="text-xs text-text-label font-semibold">
@@ -53,7 +53,7 @@ export function BottleFields({
             onChange={(e) =>
               set({ price: parseFloat(e.target.value) || 0 })
             }
-            className="w-full mt-1 px-2 py-1.5 border border-black/16 rounded-lg font-mono text-sm"
+            className="w-full mt-1 px-2 py-1.5 border border-border-strong rounded-lg font-mono text-sm"
           />
         </label>
         <label className="text-xs text-text-label font-semibold">
@@ -62,7 +62,7 @@ export function BottleFields({
             type="date"
             value={value.purchasedAt}
             onChange={(e) => set({ purchasedAt: e.target.value })}
-            className="w-full mt-1 px-2 py-1.5 border border-black/16 rounded-lg text-sm"
+            className="w-full mt-1 px-2 py-1.5 border border-border-strong rounded-lg text-sm"
           />
         </label>
       </div>
@@ -73,7 +73,7 @@ export function BottleFields({
           placeholder="https://store.com/product"
           value={value.purchaseUrl}
           onChange={(e) => set({ purchaseUrl: e.target.value })}
-          className="w-full mt-1 px-2 py-1.5 border border-black/16 rounded-lg font-mono text-sm"
+          className="w-full mt-1 px-2 py-1.5 border border-border-strong rounded-lg font-mono text-sm"
         />
       </label>
       {quantity !== undefined && onQuantityChange && (
@@ -91,7 +91,7 @@ export function BottleFields({
               onClick={() => setQuantity(quantity - 1)}
               disabled={quantity <= 1}
               aria-label="One less bottle"
-              className="w-8 h-8 border border-black/16 rounded-lg text-lg leading-none hover:bg-surface-alt disabled:opacity-40"
+              className="w-8 h-8 border border-border-strong rounded-lg text-lg leading-none hover:bg-surface-alt disabled:opacity-40"
             >
               −
             </button>
@@ -102,13 +102,13 @@ export function BottleFields({
               value={quantity}
               onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
               aria-label="Number of bottles"
-              className="w-14 px-2 py-1.5 border border-black/16 rounded-lg font-mono text-sm text-center"
+              className="w-14 px-2 py-1.5 border border-border-strong rounded-lg font-mono text-sm text-center"
             />
             <button
               type="button"
               onClick={() => setQuantity(quantity + 1)}
               aria-label="One more bottle"
-              className="w-8 h-8 border border-black/16 rounded-lg text-lg leading-none hover:bg-surface-alt"
+              className="w-8 h-8 border border-border-strong rounded-lg text-lg leading-none hover:bg-surface-alt"
             >
               +
             </button>

@@ -86,7 +86,7 @@ export function RestockPickerModal({
         className="bg-surface rounded-xl shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-6 pt-5 pb-3 border-b border-black/7">
+        <div className="px-6 pt-5 pb-3 border-b border-border">
           <h2 className="text-lg font-bold">Choose supplements to restock</h2>
           <p className="text-xs text-text-muted mt-1">
             Sorted by run-out.{" "}
@@ -113,14 +113,14 @@ export function RestockPickerModal({
                 <label
                   key={id}
                   className={`flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer transition-colors ${
-                    s.urgent ? "bg-amber-50" : ""
-                  } hover:bg-black/5`}
+                    s.urgent ? "bg-low-light" : ""
+                  } hover:bg-text/5`}
                 >
                   <input
                     type="checkbox"
                     checked={isChecked}
                     onChange={() => toggle(id)}
-                    className="w-4 h-4 accent-emerald-600"
+                    className="w-4 h-4 accent-primary"
                   />
                   <span className="flex-1 min-w-0">
                     <span className="text-sm font-medium flex items-center gap-2">
@@ -137,7 +137,7 @@ export function RestockPickerModal({
                   </span>
                   <span
                     className={`text-xs font-semibold whitespace-nowrap ${
-                      s.urgent ? "text-amber-600" : "text-text-muted"
+                      s.urgent ? "text-low" : "text-text-muted"
                     }`}
                   >
                     {s.daysLeft === null
@@ -152,7 +152,7 @@ export function RestockPickerModal({
           )}
         </div>
 
-        <div className="px-6 py-4 border-t border-black/7 flex justify-end gap-2">
+        <div className="px-6 py-4 border-t border-border flex justify-end gap-2">
           <button
             onClick={onClose}
             className="px-4 py-2 text-sm font-medium text-text-muted hover:text-text rounded-lg"
@@ -162,7 +162,7 @@ export function RestockPickerModal({
           <button
             onClick={apply}
             disabled={!data || checked === null || busy}
-            className="px-4 py-2 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg disabled:opacity-50"
+            className="px-4 py-2 text-sm font-semibold bg-primary hover:bg-primary-dark text-white rounded-lg disabled:opacity-50"
           >
             {busy ? "Saving…" : "Update plan"}
           </button>

@@ -14,7 +14,7 @@ export function PersonColumn({ person }: { person: PersonNutrients }) {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-2 pb-2 border-b border-black/10">
+      <div className="flex items-center gap-2 pb-2 border-b border-border-strong">
         <span
           className="inline-block w-3 h-3 rounded-full flex-shrink-0"
           style={{ backgroundColor: colorValue(person.color) }}
@@ -33,7 +33,7 @@ export function PersonColumn({ person }: { person: PersonNutrients }) {
       )}
 
       {person.nutrients.length > 0 && (
-        <div className="divide-y divide-black/5">
+        <div className="divide-y divide-border">
           {person.nutrients.map((n) => (
             <NutrientBar key={n.key} nutrient={n} />
           ))}

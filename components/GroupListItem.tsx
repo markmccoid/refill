@@ -34,9 +34,6 @@ interface GroupView {
   takers: { personId: Id<"people">; pillsPerWeek: number }[];
 }
 
-const PLACEHOLDER_BG =
-  "linear-gradient(45deg, #f0f0f0 25%, #e0e0e0 25%, #e0e0e0 50%, #f0f0f0 50%, #f0f0f0 75%, #e0e0e0 75%, #e0e0e0)";
-
 const perDay = (weekly: number) => Math.round((weekly / 7) * 100) / 100;
 
 export function GroupListItem({
@@ -102,8 +99,9 @@ export function GroupListItem({
         className="w-full p-4 flex items-center gap-4 text-left hover:bg-surface-alt transition-colors"
       >
         <div
-          className="w-20 h-20 flex-shrink-0 rounded-lg overflow-hidden border border-black/10 bg-gray-100"
-          style={!image ? { backgroundImage: PLACEHOLDER_BG } : {}}
+          className={`w-20 h-20 flex-shrink-0 rounded-lg overflow-hidden border border-border-strong bg-surface-alt ${
+            !image ? "img-placeholder" : ""
+          }`}
         >
           {image && (
             <img src={image} alt={group.name} className="w-full h-full object-cover" />
@@ -156,7 +154,7 @@ export function GroupListItem({
 
       {/* Expanded breakdown */}
       {expanded && (
-        <div className="border-t border-black/10 p-4 space-y-4">
+        <div className="border-t border-border-strong p-4 space-y-4">
           <div>
             <p className="text-xs font-semibold text-text-label uppercase tracking-wide mb-2">
               Consuming in this order (oldest purchase first)
@@ -172,7 +170,7 @@ export function GroupListItem({
                 return (
                   <div
                     key={m.supplement._id}
-                    className="flex items-center justify-between gap-3 border border-black/10 rounded-lg p-2.5"
+                    className="flex items-center justify-between gap-3 border border-border-strong rounded-lg p-2.5"
                   >
                     <div className="flex items-center gap-2 min-w-0">
                       <span

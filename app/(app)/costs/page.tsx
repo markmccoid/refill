@@ -62,7 +62,7 @@ export default function CostsPage() {
       {/* Per person */}
       <div>
         <h2 className="text-lg font-bold mb-3">Per person</h2>
-        <div className="card divide-y divide-black/10">
+        <div className="card divide-y divide-border-strong">
           <div className="grid grid-cols-4 gap-2 px-4 py-2 text-xs font-semibold text-text-label">
             <span>Person</span>
             <span className="text-right">Day</span>
@@ -103,7 +103,7 @@ export default function CostsPage() {
       {/* Per supplement */}
       <div>
         <h2 className="text-lg font-bold mb-3">Per supplement</h2>
-        <div className="card divide-y divide-black/10">
+        <div className="card divide-y divide-border-strong">
           <div className="grid grid-cols-3 gap-2 px-4 py-2 text-xs font-semibold text-text-label">
             <span>Supplement</span>
             <span className="text-right">Per month</span>

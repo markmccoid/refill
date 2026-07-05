@@ -74,7 +74,7 @@ export function NutrientBar({
       </div>
 
       {/* Track */}
-      <div className="relative h-2 mt-1 bg-black/5 rounded-full overflow-visible">
+      <div className="relative h-2 mt-1 bg-text/5 rounded-full overflow-visible">
         <div
           className={`h-full rounded-full ${tier.bar}`}
           style={{ width: `${widthPct}%` }}
@@ -107,7 +107,7 @@ export function NutrientBar({
               <Link
                 key={i}
                 href={`/supplements/${src.supplementId}`}
-                className="group inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-black/5 hover:bg-primary-light text-[11px] transition-colors"
+                className="group inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-text/5 hover:bg-primary-light text-[11px] transition-colors"
                 title={`${src.supplementName}: ${Math.round(src.dvPercent)}% DV${
                   src.amount > 0 && src.unit
                     ? ` · ${fmtAmount(src.amount, src.unit)}`

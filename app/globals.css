@@ -2,6 +2,71 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ---------------------------------------------------------------------------
+   Design tokens (single source of truth for color).
+   Each --c-* is an RGB triplet consumed by tailwind.config.ts as
+   rgb(var(--c-x) / <alpha-value>), so every existing utility — including
+   opacity modifiers like bg-primary/40 — works in both themes.
+   Dark mode is the .dark class on <html>, set before first paint by the
+   inline script in app/layout.tsx and controlled by components/ThemeToggle.
+   To restyle or add a theme, edit these blocks only; components must use
+   token utilities (bg-surface, text-text-muted, border-border-strong, …),
+   never raw palette colors (gray-100, black/10, #hex).
+--------------------------------------------------------------------------- */
+:root {
+  color-scheme: light;
+  --c-bg: 241 244 240;
+  --c-surface: 255 255 255;
+  --c-surface-alt: 251 252 251;
+  --c-text: 28 38 32;
+  --c-text-muted: 94 107 99;
+  --c-text-faint: 138 149 142;
+  --c-text-label: 70 82 75;
+  --c-primary: 46 125 91;
+  --c-primary-dark: 31 92 65; /* hover shade for primary surfaces */
+  --c-primary-light: 234 242 236; /* tinted background */
+  --c-critical: 192 73 47;
+  --c-critical-light: 248 232 227;
+  --c-low: 176 125 24;
+  --c-low-light: 247 239 218;
+  --c-on-track: 46 125 91;
+  --c-on-track-light: 231 241 234;
+  --c-stocked: 31 92 65;
+  --c-stocked-light: 226 236 230;
+  --border: rgba(20, 40, 30, 0.07); /* hairlines */
+  --border-strong: rgba(20, 40, 30, 0.13); /* input & card edges */
+  --shadow-card: 0 6px 24px -10px rgba(20, 40, 30, 0.18);
+  --checker-a: #f0f0f0; /* image-placeholder checkerboard */
+  --checker-b: #e0e0e0;
+}
+
+.dark {
+  color-scheme: dark;
+  --c-bg: 16 21 18;
+  --c-surface: 26 33 29;
+  --c-surface-alt: 35 43 38;
+  --c-text: 230 235 231;
+  --c-text-muted: 163 176 168;
+  --c-text-faint: 120 132 124;
+  --c-text-label: 188 199 191;
+  --c-primary: 69 168 125;
+  --c-primary-dark: 87 181 140; /* hover goes lighter on dark */
+  --c-primary-light: 34 53 43;
+  --c-critical: 229 115 90;
+  --c-critical-light: 58 34 28;
+  --c-low: 217 167 66;
+  --c-low-light: 54 44 20;
+  --c-on-track: 69 168 125;
+  --c-on-track-light: 33 51 42;
+  --c-stocked: 110 201 160;
+  --c-stocked-light: 28 47 38;
+  --border: rgba(230, 245, 238, 0.09);
+  --border-strong: rgba(230, 245, 238, 0.17);
+  --shadow-card: 0 6px 24px -10px rgba(0, 0, 0, 0.55);
+  --checker-a: #232b26;
+  --checker-b: #2b342e;
+}
+
 @layer base {
   body {
     @apply font-sans text-text antialiased;
@@ -21,7 +86,7 @@
 
   input,
   textarea {
-    @apply focus:outline-none focus:ring-2 focus:ring-primary focus:ring-opacity-20;
+    @apply focus:outline-none focus:ring-2 focus:ring-primary focus:ring-opacity-20 bg-surface text-text;
   }
 }
 
@@ -35,7 +100,7 @@
   }
 
   .card {
-    @apply bg-surface border border-black/10 rounded-md shadow-card;
+    @apply bg-surface border border-border-strong rounded-md shadow-card;
   }
 
   .status-critical {
@@ -52,6 +117,20 @@
 
   .status-stocked {
     @apply text-stocked bg-stocked-light;
+  }
+
+  /* Checkerboard shown where a supplement has no product image. */
+  .img-placeholder {
+    background-image: linear-gradient(
+      45deg,
+      var(--checker-a) 25%,
+      var(--checker-b) 25%,
+      var(--checker-b) 50%,
+      var(--checker-a) 50%,
+      var(--checker-a) 75%,
+      var(--checker-b) 75%,
+      var(--checker-b)
+    );
   }
 }
 
