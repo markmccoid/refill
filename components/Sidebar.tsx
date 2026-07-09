@@ -15,7 +15,8 @@ const nav = [
   { label: "People", href: "/people" },
   { label: "Costs", href: "/costs" },
   { label: "Restock", href: "/restock" },
-  { label: "Insights", href: "/insights" },
+  // The overview query resets any report currently open on the Insights page.
+  { label: "Insights", href: "/insights?view=overview" },
 ];
 
 const AVATAR_GRADIENTS: Record<string, string> = {
@@ -62,7 +63,9 @@ export function Sidebar() {
       {/* Navigation */}
       <nav className="flex-1 space-y-0.5">
         {nav.map((item) => {
-          const isActive = pathname.startsWith(item.href);
+          const isActive = pathname.startsWith("/insights")
+            ? item.href.startsWith("/insights")
+            : pathname.startsWith(item.href);
           return (
             <Link
               key={item.href}
@@ -80,7 +83,7 @@ export function Sidebar() {
             >
               <span className="flex items-center justify-between">
                 {item.label}
-                {item.href === "/restock" &&
+                {item.href.startsWith("/restock") &&
                   typeof restockBadge === "number" &&
                   restockBadge > 0 && (
                     <span className="ml-2 min-w-5 h-5 px-1.5 rounded-full bg-low text-white text-[11px] font-bold flex items-center justify-center">

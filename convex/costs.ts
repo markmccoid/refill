@@ -46,6 +46,15 @@ export const summary = query({
       perMonth: number;
       lifetime: number;
     }[] = [];
+    const perPersonSupplement: {
+      personId: string;
+      supplementId: string;
+      name: string;
+      pillsPerWeek: number;
+      costPerPill: number;
+      perDay: number;
+      perMonth: number;
+    }[] = [];
 
     let householdLifetime = 0;
 
@@ -83,10 +92,20 @@ export const summary = query({
 
       // Attribute the rate to each taker by their share of consumption.
       for (const d of dosages) {
+        const pillsPerWeek = getEffectiveDosageWeekly(d);
         const perDay = getSpendRatePerDay(
           getConsumptionRate([d], now),
           openCostPerPill
         );
+        perPersonSupplement.push({
+          personId: d.personId,
+          supplementId: s._id,
+          name: s.name,
+          pillsPerWeek,
+          costPerPill: openCostPerPill,
+          perDay,
+          perMonth: perDay * 30,
+        });
         perPersonDay.set(
           d.personId,
           (perPersonDay.get(d.personId) ?? 0) + perDay
@@ -161,6 +180,15 @@ export const summary = query({
 
       for (const [personId, weekly] of perPersonWeekly) {
         const perDay = getSpendRatePerDay(weekly / 7, openCostPerPill);
+        perPersonSupplement.push({
+          personId,
+          supplementId: g._id,
+          name: g.name,
+          pillsPerWeek: weekly,
+          costPerPill: openCostPerPill,
+          perDay,
+          perMonth: perDay * 30,
+        });
         perPersonDay.set(personId, (perPersonDay.get(personId) ?? 0) + perDay);
       }
     }
@@ -182,6 +210,7 @@ export const summary = query({
     return {
       perPerson,
       perSupplement: perSupplement.sort((a, b) => b.perMonth - a.perMonth),
+      perPersonSupplement: perPersonSupplement.sort((a, b) => b.perMonth - a.perMonth),
       household: {
         perDay: householdPerDay,
         perWeek: householdPerDay * 7,
