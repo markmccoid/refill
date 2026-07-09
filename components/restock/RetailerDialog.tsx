@@ -68,14 +68,8 @@ export function RetailerDialog({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={onClose}
-    >
-      <div
-        className="bg-surface rounded-xl shadow-xl w-full max-w-sm p-6 space-y-4"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-surface rounded-xl shadow-xl w-full max-w-sm p-6 space-y-4">
         <h2 className="text-lg font-bold">
           {retailer ? "Edit retailer" : "Add retailer"}
         </h2>

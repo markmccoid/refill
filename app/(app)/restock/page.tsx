@@ -274,7 +274,11 @@ function ItemCard({
             )}
           </div>
           <p className="text-xs text-text-muted mt-0.5">
-            {Math.round(item.onHand)} on hand ·{" "}
+            {Math.round(item.onHand)} available
+            {item.incomingCount > 0 && (
+              <> + {Math.round(item.incomingCount)} incoming</>
+            )}{" "}
+            ·{" "}
             {!isGroup && item.defaultJarSize > 0 && (
               <>{item.defaultJarSize}-ct bottles · </>
             )}

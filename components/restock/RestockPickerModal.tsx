@@ -78,14 +78,8 @@ export function RestockPickerModal({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={onClose}
-    >
-      <div
-        className="bg-surface rounded-xl shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-surface rounded-xl shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col">
         <div className="px-6 pt-5 pb-3 border-b border-border">
           <h2 className="text-lg font-bold">Choose supplements to restock</h2>
           <p className="text-xs text-text-muted mt-1">
@@ -132,7 +126,10 @@ export function RestockPickerModal({
                       )}
                     </span>
                     <span className="block text-xs text-text-muted">
-                      {Math.round(s.onHand)} on hand
+                      {Math.round(s.onHand)} available
+                      {s.incomingCount > 0 && (
+                        <> + {Math.round(s.incomingCount)} incoming</>
+                      )}
                     </span>
                   </span>
                   <span

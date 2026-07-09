@@ -13,6 +13,8 @@ export interface TimelineRow {
   daysLeft: number; // Infinity if nobody takes it
   status: SupplementStatus;
   href?: string; // link target; defaults to the supplement detail page
+  incomingCount?: number;
+  nextIncomingAt?: number | null;
 }
 
 // Three visual buckets for the legend (stocked folds into "on track").
@@ -73,6 +75,7 @@ export function RunOutTimeline({ rows }: { rows: TimelineRow[] }) {
           <LegendDot className="bg-critical" label="Critical" />
           <LegendDot className="bg-low" label="Low" />
           <LegendDot className="bg-on-track" label="On track" />
+          <LegendDot className="bg-primary/40" label="Incoming" />
         </div>
       </div>
 
@@ -99,6 +102,10 @@ export function RunOutTimeline({ rows }: { rows: TimelineRow[] }) {
           const runOut = isFinite(r.daysLeft)
             ? new Date(now + r.daysLeft * MS_PER_DAY)
             : null;
+          const incomingLeft =
+            r.nextIncomingAt && r.incomingCount && r.incomingCount > 0
+              ? pct(r.nextIncomingAt)
+              : null;
           const barPct = runOut
             ? Math.max(6, pct(runOut.getTime()))
             : 100;
@@ -123,6 +130,9 @@ export function RunOutTimeline({ rows }: { rows: TimelineRow[] }) {
                 </Link>
                 <div className="text-xs font-mono text-text-faint mt-0.5">
                   {r.onHand} of {r.capacity} left
+                  {!!r.incomingCount && r.incomingCount > 0 && (
+                    <span> · +{r.incomingCount} incoming</span>
+                  )}
                 </div>
               </div>
 
@@ -142,6 +152,17 @@ export function RunOutTimeline({ rows }: { rows: TimelineRow[] }) {
                     {label}
                   </span>
                 </div>
+                {incomingLeft !== null && (
+                  <div
+                    className="absolute inset-y-0 w-24 -translate-x-1/2 rounded-full border border-primary/40 bg-primary-light flex items-center justify-center px-2"
+                    style={{ left: `${incomingLeft}%` }}
+                    title={`${r.incomingCount} incoming`}
+                  >
+                    <span className="text-[10px] font-bold text-primary whitespace-nowrap">
+                      Incoming
+                    </span>
+                  </div>
+                )}
               </div>
 
               <div

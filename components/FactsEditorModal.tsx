@@ -134,7 +134,7 @@ export function FactsEditorModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/50" />
       <div className="relative z-10 bg-surface rounded-lg max-w-2xl w-full max-h-[85vh] overflow-hidden flex flex-col shadow-card">
         {/* Header */}
         <div className="border-b border-border-strong p-6 flex items-center justify-between flex-shrink-0">

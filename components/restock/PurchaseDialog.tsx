@@ -112,14 +112,8 @@ export function PurchaseDialog({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={onClose}
-    >
-      <div
-        className="bg-surface rounded-xl shadow-xl w-full max-w-xl max-h-[85vh] flex flex-col"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-surface rounded-xl shadow-xl w-full max-w-xl max-h-[85vh] flex flex-col">
         <div className="px-6 pt-5 pb-3 border-b border-border">
           <h2 className="text-lg font-bold">
             Mark purchased at {retailerName}

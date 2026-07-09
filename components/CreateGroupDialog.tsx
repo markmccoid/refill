@@ -73,14 +73,8 @@ export function CreateGroupDialog({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={onClose}
-    >
-      <div
-        className="card w-full max-w-lg max-h-[90vh] overflow-y-auto p-6 space-y-5"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="card w-full max-w-lg max-h-[90vh] overflow-y-auto p-6 space-y-5">
         <div>
           <h2 className="text-xl font-bold tracking-tight">Create a group</h2>
           <p className="text-sm text-text-muted mt-1">

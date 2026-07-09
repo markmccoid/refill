@@ -57,13 +57,16 @@ export function BottleFields({
           />
         </label>
         <label className="text-xs text-text-label font-semibold">
-          Purchased
+          Available date
           <input
             type="date"
             value={value.purchasedAt}
             onChange={(e) => set({ purchasedAt: e.target.value })}
             className="w-full mt-1 px-2 py-1.5 border border-border-strong rounded-lg text-sm"
           />
+          <p className="mt-1 text-[11px] font-normal text-text-muted">
+            Future dates are incoming and will not be used until then.
+          </p>
         </label>
       </div>
       <label className="text-xs text-text-label font-semibold block">
