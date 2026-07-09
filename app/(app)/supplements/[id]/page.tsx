@@ -19,8 +19,8 @@ import {
   getSupplementStatus,
   getDaysLeft,
   getConsumptionRate,
-  getBottleStates,
-  getGroupState,
+  getBottleStatesForDosages,
+  getGroupStateForDosages,
   getSpendRatePerDay,
   getLifetimeSpent,
   getDosageWeekly,
@@ -158,6 +158,8 @@ export default function SupplementDetailPage() {
   let states: BottleState<Doc<"bottles">>[];
   let onHand: number;
   let bottleCount: number;
+  let incomingCount: number;
+  let nextIncomingAt: number | null;
   let openRemaining: number;
   let openCostPerPill: number;
   let daysLeft: number;
@@ -169,10 +171,23 @@ export default function SupplementDetailPage() {
       supplementId: m.supplement._id as string,
       bottles: m.bottles,
     }));
-    const gl = getGroupState(memberInput, group.anchoredAt, rate);
+    const gl = getGroupStateForDosages(
+      memberInput,
+      group.anchoredAt,
+      group.dosages ?? []
+    );
     states = gl.states.filter((s) => s.bottle.supplementId === supplementId);
-    onHand = Math.round(states.reduce((sum, s) => sum + s.remaining, 0));
-    const ne = states.filter((s) => s.remaining > 0);
+    const availableStates = states.filter((s) => s.bottle.purchasedAt <= Date.now());
+    const incomingStates = states.filter(
+      (s) => s.bottle.purchasedAt > Date.now() && s.remaining > 0
+    );
+    onHand = Math.round(availableStates.reduce((sum, s) => sum + s.remaining, 0));
+    incomingCount = Math.round(
+      incomingStates.reduce((sum, s) => sum + s.remaining, 0)
+    );
+    nextIncomingAt =
+      incomingStates.length > 0 ? incomingStates[0].bottle.purchasedAt : null;
+    const ne = availableStates.filter((s) => s.remaining > 0);
     bottleCount = ne.length;
     const openHere = states.find((s) => s.isOpen);
     openRemaining = openHere ? Math.round(openHere.remaining) : 0;
@@ -181,21 +196,40 @@ export default function SupplementDetailPage() {
     monthlySpend = getSpendRatePerDay(rate, gl.openCostPerPill) * 30;
   } else {
     rate = getConsumptionRate(dosages.filter((d) => d.personActive));
-    const ledger = getBottleStates(bottles, anchoredAt, rate);
+    const activeDosages = dosages.filter((d) => d.personActive);
+    const ledger = getBottleStatesForDosages(bottles, anchoredAt, activeDosages);
     states = ledger.states;
     onHand = ledger.onHand;
     bottleCount = ledger.bottleCount;
+    incomingCount = ledger.incomingCount;
+    nextIncomingAt = ledger.nextIncomingAt;
     openRemaining = ledger.openRemaining;
     openCostPerPill = ledger.openCostPerPill;
     daysLeft = getDaysLeft(ledger.onHand, rate);
     monthlySpend = getSpendRatePerDay(rate, ledger.openCostPerPill) * 30;
   }
 
-  const ledger = { onHand, bottleCount, openRemaining, openCostPerPill, states };
+  const ledger = {
+    onHand,
+    bottleCount,
+    incomingCount,
+    nextIncomingAt,
+    openRemaining,
+    openCostPerPill,
+    states,
+  };
   const status = getSupplementStatus(daysLeft);
   const openState = states.find((s) => s.isOpen);
-  const nonEmpty = states.filter((s) => s.remaining > 0);
-  const empty = states.filter((s) => s.remaining <= 0);
+  const now = Date.now();
+  const nonEmpty = states.filter(
+    (s) => s.bottle.purchasedAt <= now && s.remaining > 0
+  );
+  const incoming = states.filter(
+    (s) => s.bottle.purchasedAt > now && s.remaining > 0
+  );
+  const empty = states.filter(
+    (s) => s.bottle.purchasedAt <= now && s.remaining <= 0
+  );
 
   // Distinct purchase links across all bottles, newest purchase first.
   const purchaseLinks = Array.from(
@@ -584,6 +618,9 @@ export default function SupplementDetailPage() {
                 {openState &&
                   ledger.bottleCount > 1 &&
                   ` · open at ${ledger.openRemaining}/${openState.bottle.count}`}
+                {ledger.incomingCount > 0 && (
+                  <span> · +{ledger.incomingCount} incoming</span>
+                )}
               </div>
             </div>
 
@@ -766,7 +803,7 @@ export default function SupplementDetailPage() {
           </div>
         </div>
 
-        {nonEmpty.length === 0 && empty.length === 0 && (
+        {nonEmpty.length === 0 && incoming.length === 0 && empty.length === 0 && (
           <p className="text-sm text-text-muted">
             No bottles logged. Add one to start tracking stock & spend.
           </p>
@@ -888,7 +925,7 @@ export default function SupplementDetailPage() {
                         />
                       </label>
                       <label className="text-xs text-text-label font-semibold">
-                        Purchased
+                        Available date
                         <input
                           type="date"
                           value={editBottle.purchasedAt}
@@ -900,6 +937,9 @@ export default function SupplementDetailPage() {
                           }
                           className="w-full mt-1 px-2 py-1.5 border border-border-strong rounded-lg text-sm"
                         />
+                        <p className="mt-1 text-[11px] font-normal text-text-muted">
+                          Future dates are incoming and will not be used until then.
+                        </p>
                       </label>
                       <label className="text-xs text-text-label font-semibold">
                         Pills remaining now
@@ -957,6 +997,59 @@ export default function SupplementDetailPage() {
             );
           })}
         </div>
+
+        {/* Incoming bottles */}
+        {incoming.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-xs font-semibold text-text-label uppercase tracking-wide">
+              Incoming
+            </p>
+            {incoming.map((s) => {
+              const id = s.bottle._id as Id<"bottles">;
+              return (
+                <div
+                  key={id}
+                  className="border border-primary/30 bg-primary-light rounded-lg p-3 flex items-center gap-3 text-sm"
+                >
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-primary text-white">
+                    Incoming
+                  </span>
+                  <span className="font-mono">
+                    {Math.round(s.remaining)} / {s.bottle.count}
+                  </span>
+                  <span className="font-mono">
+                    ${s.bottle.price.toFixed(2)}
+                  </span>
+                  <span className="text-xs text-text-muted">
+                    available {toDateInput(s.bottle.purchasedAt)}
+                  </span>
+                  <button
+                    onClick={() => {
+                      setEditingBottleId(id);
+                      setEditBottle({
+                        count: s.bottle.count,
+                        price: s.bottle.price,
+                        purchaseUrl: s.bottle.purchaseUrl ?? "",
+                        purchasedAt: toDateInput(s.bottle.purchasedAt),
+                        remaining: Math.round(s.remaining),
+                      });
+                    }}
+                    className="text-xs text-primary hover:underline ml-auto"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => handleRemoveBottle(id)}
+                    disabled={saving}
+                    className="text-xs text-critical hover:underline disabled:opacity-50"
+                  >
+                    Delete
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* Emptied history */}
         {empty.length > 0 && (

@@ -8,8 +8,8 @@ import { RunOutTimeline } from "@/components/RunOutTimeline";
 import {
   getSupplementStatus,
   getDaysLeft,
-  getBottleStates,
-  getGroupState,
+  getBottleStatesForDosages,
+  getGroupStateForDosages,
   getSpendRatePerDay,
 } from "@/lib/supplement-utils";
 
@@ -46,10 +46,10 @@ export default function DashboardPage() {
     .filter((s) => !s.groupId)
     .map((s) => {
       const anchoredAt = s.anchoredAt ?? s.createdAt ?? Date.now();
-      const breakdown = getBottleStates(
+      const breakdown = getBottleStatesForDosages(
         s.bottles ?? [],
         anchoredAt,
-        s.consumptionRate
+        s.dosages ?? []
       );
       const daysLeft = getDaysLeft(breakdown.onHand, s.consumptionRate);
       const monthlySpend =
@@ -61,6 +61,8 @@ export default function DashboardPage() {
         href: undefined as string | undefined,
         buyHref: "/restock",
         onHand: breakdown.onHand,
+        incomingCount: breakdown.incomingCount,
+        nextIncomingAt: breakdown.nextIncomingAt,
         daysLeft,
         capacity,
         monthlySpend,
@@ -74,7 +76,11 @@ export default function DashboardPage() {
       supplementId: m.supplement._id as string,
       bottles: m.bottles,
     }));
-    const ledger = getGroupState(memberInput, g.anchoredAt, g.consumptionRate);
+    const ledger = getGroupStateForDosages(
+      memberInput,
+      g.anchoredAt,
+      g.dosages ?? []
+    );
     const daysLeft = getDaysLeft(ledger.onHand, g.consumptionRate);
     const monthlySpend =
       getSpendRatePerDay(g.consumptionRate, ledger.openCostPerPill) * 30;
@@ -90,6 +96,8 @@ export default function DashboardPage() {
       href: openId ? `/supplements/${openId}` : "/supplements",
       buyHref: "/restock",
       onHand: ledger.onHand,
+      incomingCount: ledger.incomingCount,
+      nextIncomingAt: ledger.nextIncomingAt,
       daysLeft,
       capacity,
       monthlySpend,
@@ -188,6 +196,8 @@ export default function DashboardPage() {
           name: d.name,
           href: d.href,
           onHand: d.onHand,
+          incomingCount: d.incomingCount,
+          nextIncomingAt: d.nextIncomingAt,
           capacity: d.capacity,
           daysLeft: d.daysLeft,
           status: d.status,

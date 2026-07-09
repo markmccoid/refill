@@ -2,7 +2,7 @@ import { query } from "./_generated/server";
 import { v } from "convex/values";
 import { Doc, Id } from "./_generated/dataModel";
 import { requireMembership } from "./authz";
-import { getGroupState } from "../lib/supplement-utils";
+import { getGroupStateForDosages, isDosagePaused } from "../lib/supplement-utils";
 import {
   aggregateSupplement,
   dosageWeekly,
@@ -79,6 +79,7 @@ export const summary = query({
       for (const d of dosagesBySupplement.get(s._id) ?? []) {
         const list = personDosages.get(d.personId);
         if (!list) continue; // disabled person
+        if (isDosagePaused(d)) continue;
         list.push({ supplementId: s._id, weekly: dosageWeekly(d) });
       }
     }
@@ -108,15 +109,10 @@ export const summary = query({
       const activeDosages = allDosages.filter((d) =>
         people.some((p) => p._id === d.personId)
       );
-      const ratePerWeek = activeDosages.reduce(
-        (sum, d) => sum + dosageWeekly(d),
-        0
-      );
-      const ratePerDay = ratePerWeek / 7;
-      const state = getGroupState(
+      const state = getGroupStateForDosages(
         memberBottles,
         g.anchoredAt,
-        ratePerDay
+        activeDosages
       );
       groupOpenBrand.set(
         g._id,

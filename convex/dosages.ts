@@ -1,7 +1,36 @@
-import { mutation, query } from "./_generated/server";
+import { MutationCtx, mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { reanchorFor } from "./consumption";
 import { requireSupplementAccess, requirePersonAccess } from "./authz";
+import { Doc, Id } from "./_generated/dataModel";
+import { getDosageWeekly, isDosagePaused } from "../lib/supplement-utils";
+
+async function writeEvent(
+  ctx: MutationCtx,
+  dosage: Pick<Doc<"dosages">, "_id" | "supplementId" | "personId">,
+  type: Doc<"dosageEvents">["type"],
+  fields: Partial<
+    Pick<
+      Doc<"dosageEvents">,
+      | "previousPillsPerWeek"
+      | "nextPillsPerWeek"
+      | "pauseStartedAt"
+      | "pauseUntil"
+    >
+  > = {}
+) {
+  const supplement = await ctx.db.get(dosage.supplementId);
+  if (!supplement) return;
+  await ctx.db.insert("dosageEvents", {
+    householdId: supplement.householdId,
+    dosageId: dosage._id,
+    supplementId: dosage.supplementId,
+    personId: dosage.personId,
+    type,
+    occurredAt: Date.now(),
+    ...fields,
+  });
+}
 
 export const listBySupplementId = query({
   args: { supplementId: v.id("supplements") },
@@ -14,10 +43,18 @@ export const listBySupplementId = query({
       .query("dosages")
       .withIndex("by_supplement", (q) => q.eq("supplementId", supplementId))
       .collect();
+    const now = Date.now();
     return await Promise.all(
       dosages.map(async (d) => {
         const person = await ctx.db.get(d.personId);
-        return { ...d, personActive: !!person && person.status !== "disabled" };
+        const personActive = !!person && person.status !== "disabled";
+        const dosagePaused = isDosagePaused(d, now);
+        return {
+          ...d,
+          personActive: personActive && !dosagePaused,
+          dosagePaused,
+          personDisabled: !personActive,
+        };
       })
     );
   },
@@ -27,10 +64,15 @@ export const listByPersonId = query({
   args: { personId: v.id("people") },
   async handler(ctx, { personId }) {
     await requirePersonAccess(ctx, personId);
-    return await ctx.db
+    const now = Date.now();
+    const dosages = await ctx.db
       .query("dosages")
       .withIndex("by_person", (q) => q.eq("personId", personId))
       .collect();
+    return dosages.map((d) => ({
+      ...d,
+      dosagePaused: isDosagePaused(d, now),
+    }));
   },
 });
 
@@ -41,11 +83,21 @@ export const create = mutation({
     pillsPerWeek: v.number(),
   },
   async handler(ctx, args) {
-    await requireSupplementAccess(ctx, args.supplementId);
+    const supplement = await requireSupplementAccess(ctx, args.supplementId);
     await requirePersonAccess(ctx, args.personId);
     // Re-anchor first: freeze on-hand at the old rate before the rate changes.
     await reanchorFor(ctx, args.supplementId);
-    return await ctx.db.insert("dosages", args);
+    const id = await ctx.db.insert("dosages", args);
+    await ctx.db.insert("dosageEvents", {
+      householdId: supplement.householdId,
+      dosageId: id,
+      supplementId: args.supplementId,
+      personId: args.personId,
+      type: "created",
+      occurredAt: Date.now(),
+      nextPillsPerWeek: args.pillsPerWeek,
+    });
+    return id;
   },
 });
 
@@ -59,8 +111,82 @@ export const update = mutation({
     if (!dosage) return null;
     await requireSupplementAccess(ctx, dosage.supplementId);
     await reanchorFor(ctx, dosage.supplementId);
+    const previousPillsPerWeek = getDosageWeekly(dosage);
     await ctx.db.patch(id, updates);
+    await writeEvent(ctx, dosage, "changed", {
+      previousPillsPerWeek,
+      nextPillsPerWeek: updates.pillsPerWeek,
+    });
     return await ctx.db.get(id);
+  },
+});
+
+export const pause = mutation({
+  args: {
+    id: v.id("dosages"),
+    pauseUntil: v.optional(v.number()),
+  },
+  async handler(ctx, { id, pauseUntil }) {
+    const dosage = await ctx.db.get(id);
+    if (!dosage) return null;
+    await requireSupplementAccess(ctx, dosage.supplementId);
+    await reanchorFor(ctx, dosage.supplementId);
+    const pausedAt = Date.now();
+    await ctx.db.patch(id, { pausedAt, pauseUntil });
+    await writeEvent(ctx, dosage, "paused", {
+      nextPillsPerWeek: getDosageWeekly(dosage),
+      pauseStartedAt: pausedAt,
+      pauseUntil,
+    });
+    return await ctx.db.get(id);
+  },
+});
+
+export const resume = mutation({
+  args: { id: v.id("dosages") },
+  async handler(ctx, { id }) {
+    const dosage = await ctx.db.get(id);
+    if (!dosage) return null;
+    await requireSupplementAccess(ctx, dosage.supplementId);
+    await reanchorFor(ctx, dosage.supplementId);
+    await ctx.db.patch(id, { pausedAt: undefined, pauseUntil: undefined });
+    await writeEvent(ctx, dosage, "resumed", {
+      nextPillsPerWeek: getDosageWeekly(dosage),
+      pauseStartedAt: dosage.pausedAt,
+      pauseUntil: dosage.pauseUntil,
+    });
+    return await ctx.db.get(id);
+  },
+});
+
+export const pauseAllForPerson = mutation({
+  args: {
+    personId: v.id("people"),
+    pauseUntil: v.optional(v.number()),
+  },
+  async handler(ctx, { personId, pauseUntil }) {
+    await requirePersonAccess(ctx, personId);
+    const dosages = await ctx.db
+      .query("dosages")
+      .withIndex("by_person", (q) => q.eq("personId", personId))
+      .collect();
+    const now = Date.now();
+    const activeDosages = dosages.filter((d) => !isDosagePaused(d, now));
+    const supplementIds = new Set<Id<"supplements">>(
+      activeDosages.map((d) => d.supplementId)
+    );
+    for (const supplementId of supplementIds) {
+      await reanchorFor(ctx, supplementId);
+    }
+    for (const dosage of activeDosages) {
+      await ctx.db.patch(dosage._id, { pausedAt: now, pauseUntil });
+      await writeEvent(ctx, dosage, "paused", {
+        nextPillsPerWeek: getDosageWeekly(dosage),
+        pauseStartedAt: now,
+        pauseUntil,
+      });
+    }
+    return { paused: activeDosages.length };
   },
 });
 
@@ -71,6 +197,9 @@ export const remove = mutation({
     if (!dosage) return;
     await requireSupplementAccess(ctx, dosage.supplementId);
     await reanchorFor(ctx, dosage.supplementId);
+    await writeEvent(ctx, dosage, "removed", {
+      previousPillsPerWeek: getDosageWeekly(dosage),
+    });
     await ctx.db.delete(id);
   },
 });

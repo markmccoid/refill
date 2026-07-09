@@ -3,12 +3,12 @@ import { v } from "convex/values";
 import { Doc, Id } from "./_generated/dataModel";
 import {
   getConsumptionRate,
-  getBottleStates,
-  getGroupState,
+  getBottleStatesForDosages,
+  getGroupStateForDosages,
   getGroupRate,
   getSpendRatePerDay,
   getLifetimeSpent,
-  getDosageWeekly,
+  getEffectiveDosageWeekly,
 } from "../lib/supplement-utils";
 import { requireMembership } from "./authz";
 
@@ -62,9 +62,15 @@ export const summary = query({
         .withIndex("by_supplement", (q) => q.eq("supplementId", s._id))
         .collect();
 
-      const rate = getConsumptionRate(dosages);
+      const now = Date.now();
+      const rate = getConsumptionRate(dosages, now);
       const anchoredAt = s.anchoredAt ?? s.createdAt ?? Date.now();
-      const { openCostPerPill } = getBottleStates(bottles, anchoredAt, rate);
+      const { openCostPerPill } = getBottleStatesForDosages(
+        bottles,
+        anchoredAt,
+        dosages,
+        now
+      );
       const lifetime = getLifetimeSpent(bottles);
 
       perSupplement.push({
@@ -78,7 +84,7 @@ export const summary = query({
       // Attribute the rate to each taker by their share of consumption.
       for (const d of dosages) {
         const perDay = getSpendRatePerDay(
-          getDosageWeekly(d) / 7,
+          getConsumptionRate([d], now),
           openCostPerPill
         );
         perPersonDay.set(
@@ -104,6 +110,7 @@ export const summary = query({
 
       // Per-person weekly across members (max per person), active people only.
       const perPersonWeekly = new Map<string, number>();
+      const memberDosages: (Doc<"dosages"> & { personId: string })[] = [];
       const memberBottles: {
         supplementId: Id<"supplements">;
         bottles: Doc<"bottles">[];
@@ -123,7 +130,8 @@ export const summary = query({
             .collect()
         ).filter((d) => activePersonIds.has(d.personId));
         for (const d of dosages) {
-          const w = getDosageWeekly(d);
+          memberDosages.push(d);
+          const w = getEffectiveDosageWeekly(d);
           perPersonWeekly.set(
             d.personId,
             Math.max(perPersonWeekly.get(d.personId) ?? 0, w)
@@ -137,10 +145,10 @@ export const summary = query({
           weekly,
         }))
       );
-      const { openCostPerPill } = getGroupState(
+      const { openCostPerPill } = getGroupStateForDosages(
         memberBottles,
         g.anchoredAt,
-        rate
+        memberDosages
       );
 
       perSupplement.push({

@@ -139,12 +139,38 @@ export default defineSchema({
     supplementId: v.id("supplements"),
     personId: v.id("people"),
     pillsPerWeek: v.optional(v.number()), // canonical: total pills per week
+    pausedAt: v.optional(v.number()), // ms; active if pauseUntil is missing or future
+    pauseUntil: v.optional(v.number()), // ms; dated pauses auto-resume after this
     // Legacy fixed-schedule model (pre pills-per-week):
     pillsPerDose: v.optional(v.number()),
     daysPerWeek: v.optional(v.number()),
   })
     .index("by_supplement", ["supplementId"])
     .index("by_person", ["personId"]),
+
+  dosageEvents: defineTable({
+    householdId: v.id("households"),
+    dosageId: v.optional(v.id("dosages")),
+    supplementId: v.id("supplements"),
+    personId: v.id("people"),
+    type: v.union(
+      v.literal("baseline"),
+      v.literal("created"),
+      v.literal("changed"),
+      v.literal("paused"),
+      v.literal("resumed"),
+      v.literal("removed")
+    ),
+    occurredAt: v.number(),
+    previousPillsPerWeek: v.optional(v.number()),
+    nextPillsPerWeek: v.optional(v.number()),
+    pauseStartedAt: v.optional(v.number()),
+    pauseUntil: v.optional(v.number()),
+  })
+    .index("by_household", ["householdId"])
+    .index("by_dosage", ["dosageId"])
+    .index("by_person", ["personId"])
+    .index("by_supplement", ["supplementId"]),
 
   // A store the household buys from (ADR-0006). First-class so saved links,
   // average prices, shipping thresholds, and never-yet-purchased-from stores

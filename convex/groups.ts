@@ -5,6 +5,7 @@ import {
   reanchorSupplement,
   reanchorGroup,
   getActiveDosages,
+  getPersonActiveDosages,
 } from "./consumption";
 import { getDosageWeekly, getGroupRate } from "../lib/supplement-utils";
 import {
@@ -35,10 +36,12 @@ async function buildGroupView(ctx: QueryCtx, g: Doc<"groups">) {
   );
 
   const weeklies: { personId: string; weekly: number }[] = [];
+  const dosages: Doc<"dosages">[] = [];
   for (const m of members) {
     for (const d of await getActiveDosages(ctx, m._id)) {
       weeklies.push({ personId: d.personId, weekly: getDosageWeekly(d) });
     }
+    dosages.push(...(await getPersonActiveDosages(ctx, m._id)));
   }
 
   const takerWeekly = new Map<string, number>();
@@ -63,6 +66,7 @@ async function buildGroupView(ctx: QueryCtx, g: Doc<"groups">) {
     ...g,
     members: memberData,
     takers,
+    dosages,
     consumptionRate: getGroupRate(weeklies),
   };
 }

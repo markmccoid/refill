@@ -7,7 +7,7 @@ import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { DosageInput } from "@/components/DosageInput";
 import {
-  getGroupState,
+  getGroupStateForDosages,
   getDaysLeft,
   getSupplementStatus,
   getSpendRatePerDay,
@@ -31,6 +31,12 @@ interface GroupView {
   anchoredAt: number;
   consumptionRate: number;
   members: GroupMemberView[];
+  dosages: {
+    personId: Id<"people">;
+    pillsPerWeek?: number;
+    pausedAt?: number;
+    pauseUntil?: number;
+  }[];
   takers: { personId: Id<"people">; pillsPerWeek: number }[];
 }
 
@@ -55,16 +61,26 @@ export function GroupListItem({
     supplementId: m.supplement._id as string,
     bottles: m.bottles,
   }));
-  const ledger = getGroupState(memberInput, group.anchoredAt, rate);
+  const ledger = getGroupStateForDosages(
+    memberInput,
+    group.anchoredAt,
+    group.dosages
+  );
   const daysLeft = getDaysLeft(ledger.onHand, rate);
   const status = getSupplementStatus(daysLeft);
   const monthlySpend = getSpendRatePerDay(rate, ledger.openCostPerPill) * 30;
+  const now = Date.now();
 
   // Per-member remaining (Σ its bottles) + queue order (earliest bottle first).
   const remainingByMember = new Map<string, number>();
+  const incomingByMember = new Map<string, number>();
   for (const s of ledger.states) {
     const id = s.bottle.supplementId;
-    remainingByMember.set(id, (remainingByMember.get(id) ?? 0) + s.remaining);
+    if (s.bottle.purchasedAt <= now) {
+      remainingByMember.set(id, (remainingByMember.get(id) ?? 0) + s.remaining);
+    } else {
+      incomingByMember.set(id, (incomingByMember.get(id) ?? 0) + s.remaining);
+    }
   }
   const earliestByMember = new Map<string, number>();
   for (const m of group.members) {
@@ -126,6 +142,12 @@ export function GroupListItem({
               "none open"
             )}{" "}
             · <span className="font-mono">{ledger.onHand} on hand</span>
+            {ledger.incomingCount > 0 && (
+              <span className="font-mono">
+                {" "}
+                · +{ledger.incomingCount} incoming
+              </span>
+            )}
           </p>
         </div>
 
@@ -164,9 +186,18 @@ export function GroupListItem({
                 const remaining = Math.round(
                   remainingByMember.get(m.supplement._id) ?? 0
                 );
+                const incoming = Math.round(
+                  incomingByMember.get(m.supplement._id) ?? 0
+                );
                 const isOpen = m.supplement._id === ledger.openSupplementId;
                 const state =
-                  remaining <= 0 ? "empty" : isOpen ? "open" : "frozen";
+                  remaining > 0
+                    ? isOpen
+                      ? "open"
+                      : "frozen"
+                    : incoming > 0
+                      ? "incoming"
+                      : "empty";
                 return (
                   <div
                     key={m.supplement._id}
@@ -179,10 +210,18 @@ export function GroupListItem({
                             ? "bg-on-track/15 text-on-track"
                             : state === "frozen"
                             ? "bg-black/[0.06] text-text-muted"
+                            : state === "incoming"
+                            ? "bg-primary-light text-primary"
                             : "bg-black/[0.04] text-text-faint"
                         }`}
                       >
-                        {state === "open" ? "● open" : state === "frozen" ? "○ next" : "empty"}
+                        {state === "open"
+                          ? "● open"
+                          : state === "frozen"
+                            ? "○ next"
+                            : state === "incoming"
+                              ? "incoming"
+                              : "empty"}
                       </span>
                       <Link
                         href={`/supplements/${m.supplement._id}`}
@@ -202,6 +241,12 @@ export function GroupListItem({
                         {remaining} left
                         {state === "frozen" && (
                           <span className="text-text-faint"> · frozen</span>
+                        )}
+                        {incoming > 0 && (
+                          <span className="text-text-faint">
+                            {" "}
+                            · +{incoming} incoming
+                          </span>
                         )}
                       </span>
                       <button

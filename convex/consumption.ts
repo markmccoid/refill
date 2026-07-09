@@ -1,11 +1,10 @@
 import { MutationCtx, QueryCtx } from "./_generated/server";
 import { Doc, Id } from "./_generated/dataModel";
 import {
-  getConsumptionRate,
-  getBottleStates,
-  getGroupState,
-  getGroupRate,
+  getBottleStatesForDosages,
+  getGroupStateForDosages,
   getDosageWeekly,
+  isDosagePaused,
 } from "../lib/supplement-utils";
 
 /**
@@ -15,6 +14,24 @@ import {
  * single source of truth. See docs/adr/0003.
  */
 export async function getActiveDosages(
+  ctx: QueryCtx | MutationCtx,
+  supplementId: Id<"supplements">
+): Promise<Doc<"dosages">[]> {
+  const dosages = await ctx.db
+    .query("dosages")
+    .withIndex("by_supplement", (q) => q.eq("supplementId", supplementId))
+    .collect();
+  const active: Doc<"dosages">[] = [];
+  for (const d of dosages) {
+    const person = await ctx.db.get(d.personId);
+    if (person && person.status !== "disabled" && !isDosagePaused(d)) {
+      active.push(d);
+    }
+  }
+  return active;
+}
+
+export async function getPersonActiveDosages(
   ctx: QueryCtx | MutationCtx,
   supplementId: Id<"supplements">
 ): Promise<Doc<"dosages">[]> {
@@ -48,16 +65,18 @@ export async function reanchorSupplement(
   const supplement = await ctx.db.get(supplementId);
   if (!supplement) return;
 
-  const dosages = await getActiveDosages(ctx, supplementId);
-  const rate = getConsumptionRate(dosages);
-
+  const dosages = await getPersonActiveDosages(ctx, supplementId);
   const bottles = await ctx.db
     .query("bottles")
     .withIndex("by_supplement", (q) => q.eq("supplementId", supplementId))
     .collect();
 
   const anchoredAt = supplement.anchoredAt ?? supplement.createdAt ?? Date.now();
-  const { states, onHandExact } = getBottleStates(bottles, anchoredAt, rate);
+  const { states, onHandExact } = getBottleStatesForDosages(
+    bottles,
+    anchoredAt,
+    dosages
+  );
 
   const now = Date.now();
   for (const s of states) {
@@ -96,6 +115,7 @@ export async function reanchorGroup(ctx: MutationCtx, groupId: Id<"groups">) {
     .collect();
 
   const memberBottles: { supplementId: Id<"supplements">; bottles: Doc<"bottles">[] }[] = [];
+  const dosages: (Doc<"dosages"> & { personId: string })[] = [];
   const weeklies: { personId: string; weekly: number }[] = [];
   for (const m of members) {
     const bottles = await ctx.db
@@ -103,13 +123,19 @@ export async function reanchorGroup(ctx: MutationCtx, groupId: Id<"groups">) {
       .withIndex("by_supplement", (q) => q.eq("supplementId", m._id))
       .collect();
     memberBottles.push({ supplementId: m._id, bottles });
-    for (const d of await getActiveDosages(ctx, m._id)) {
-      weeklies.push({ personId: d.personId, weekly: getDosageWeekly(d) });
+    for (const d of await getPersonActiveDosages(ctx, m._id)) {
+      dosages.push(d);
+      if (!isDosagePaused(d)) {
+        weeklies.push({ personId: d.personId, weekly: getDosageWeekly(d) });
+      }
     }
   }
 
-  const rate = getGroupRate(weeklies);
-  const { states } = getGroupState(memberBottles, group.anchoredAt, rate);
+  const { states } = getGroupStateForDosages(
+    memberBottles,
+    group.anchoredAt,
+    dosages
+  );
 
   const now = Date.now();
   for (const s of states) {

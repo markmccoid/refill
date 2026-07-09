@@ -8,7 +8,7 @@ import {
   getSupplementStatus,
   getDaysLeft,
   getConsumptionRate,
-  getBottleStates,
+  getBottleStatesForDosages,
   getSpendRatePerDay,
   getDosageWeekly,
   type BottleLike,
@@ -48,7 +48,11 @@ export function SupplementListItem({ supplement }: SupplementListItemProps) {
   const rate = getConsumptionRate(activeDosages);
   const anchoredAt =
     supplement.anchoredAt ?? supplement.createdAt ?? Date.now();
-  const ledger = getBottleStates(supplement.bottles ?? [], anchoredAt, rate);
+  const ledger = getBottleStatesForDosages(
+    supplement.bottles ?? [],
+    anchoredAt,
+    activeDosages
+  );
   const daysLeft = getDaysLeft(ledger.onHand, rate);
   const status = getSupplementStatus(daysLeft);
   const monthlySpend = getSpendRatePerDay(rate, ledger.openCostPerPill) * 30;
@@ -92,6 +96,12 @@ export function SupplementListItem({ supplement }: SupplementListItemProps) {
           <span className="font-mono">
             {ledger.onHand} on hand
           </span>
+          {ledger.incomingCount > 0 && (
+            <span className="font-mono">
+              {" "}
+              · +{ledger.incomingCount} incoming
+            </span>
+          )}
           {ledger.bottleCount > 1 && (
             <span className="font-mono"> · {ledger.bottleCount} bottles</span>
           )}

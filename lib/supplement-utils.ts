@@ -19,6 +19,8 @@ export interface ConsumptionInput {
 
 export interface DosageLike {
   pillsPerWeek?: number;
+  pausedAt?: number;
+  pauseUntil?: number;
   // Legacy fallback:
   pillsPerDose?: number;
   daysPerWeek?: number;
@@ -33,9 +35,93 @@ export function getDosageWeekly(d: DosageLike): number {
 }
 
 /** Pills consumed per day = (Σ pills-per-week across takers) ÷ 7. */
-export function getConsumptionRate(dosages: DosageLike[]): number {
-  const perWeek = dosages.reduce((sum, d) => sum + getDosageWeekly(d), 0);
+export function isDosagePaused(
+  d: DosageLike,
+  now: number = Date.now()
+): boolean {
+  if (typeof d.pausedAt !== "number") return false;
+  if (d.pausedAt > now) return false;
+  return typeof d.pauseUntil !== "number" || d.pauseUntil > now;
+}
+
+export function getEffectiveDosageWeekly(
+  d: DosageLike,
+  now: number = Date.now()
+): number {
+  return isDosagePaused(d, now) ? 0 : getDosageWeekly(d);
+}
+
+export function getConsumptionRate(
+  dosages: DosageLike[],
+  now: number = Date.now()
+): number {
+  const perWeek = dosages.reduce(
+    (sum, d) => sum + getEffectiveDosageWeekly(d, now),
+    0
+  );
   return perWeek / 7;
+}
+
+function getConsumptionBreakpoints(
+  dosages: DosageLike[],
+  from: number,
+  to: number
+): number[] {
+  const points = new Set([from, to]);
+  for (const d of dosages) {
+    if (typeof d.pausedAt === "number" && d.pausedAt > from && d.pausedAt < to) {
+      points.add(d.pausedAt);
+    }
+    if (
+      typeof d.pauseUntil === "number" &&
+      d.pauseUntil > from &&
+      d.pauseUntil < to
+    ) {
+      points.add(d.pauseUntil);
+    }
+  }
+  return [...points].sort((a, b) => a - b);
+}
+
+export function getDosageConsumptionBetween(
+  dosages: DosageLike[],
+  from: number,
+  to: number
+): number {
+  if (to <= from) return 0;
+  const points = getConsumptionBreakpoints(dosages, from, to);
+  let consumed = 0;
+  for (let i = 0; i < points.length - 1; i++) {
+    const start = points[i];
+    const end = points[i + 1];
+    const midpoint = start + (end - start) / 2;
+    consumed += ((end - start) / MS_PER_DAY) * getConsumptionRate(dosages, midpoint);
+  }
+  return consumed;
+}
+
+export function getGroupConsumptionBetween(
+  memberDosages: (DosageLike & { personId: string })[],
+  from: number,
+  to: number
+): number {
+  if (to <= from) return 0;
+  const points = getConsumptionBreakpoints(memberDosages, from, to);
+  let consumed = 0;
+  for (let i = 0; i < points.length - 1; i++) {
+    const start = points[i];
+    const end = points[i + 1];
+    const midpoint = start + (end - start) / 2;
+    const perPerson = new Map<string, number>();
+    for (const d of memberDosages) {
+      const weekly = getEffectiveDosageWeekly(d, midpoint);
+      perPerson.set(d.personId, Math.max(perPerson.get(d.personId) ?? 0, weekly));
+    }
+    let weekly = 0;
+    for (const w of perPerson.values()) weekly += w;
+    consumed += ((end - start) / MS_PER_DAY) * (weekly / 7);
+  }
+  return consumed;
 }
 
 export function getAnchorQuantity(s: ConsumptionInput): number {
@@ -91,6 +177,9 @@ export interface LedgerState<B extends BottleLike = BottleLike> {
   states: BottleState<B>[]; // oldest -> newest
   onHand: number; // Σ remaining (rounded for display by caller)
   onHandExact: number;
+  incomingCount: number; // pills in future-available bottles
+  incomingBottles: number;
+  nextIncomingAt: number | null;
   openCostPerPill: number; // cost/pill of the open bottle; 0 if none
   sealedSpares: number; // full bottles behind the open one
   bottleCount: number; // non-empty bottles (open + sealed)
@@ -108,20 +197,55 @@ export function sortBottles<B extends BottleLike>(bottles: B[]): B[] {
  * pills from the oldest bottles. Yields each bottle's current remaining plus the
  * open bottle (oldest non-empty) whose price drives cost-per-pill.
  */
-export function getBottleStates<B extends BottleLike>(
+function getBottleLedger<B extends BottleLike>(
   bottles: B[],
   anchoredAt: number,
-  ratePerDay: number,
-  now: number = Date.now()
+  now: number,
+  consumptionBetween: (from: number, to: number) => number
 ): LedgerState<B> {
   const ordered = sortBottles(bottles);
-  const elapsedDays = Math.max(0, (now - anchoredAt) / MS_PER_DAY);
-  let toConsume = Math.max(0, ratePerDay * elapsedDays);
+  const remainingByBottle = new Map<B, number>();
+  for (const bottle of ordered) {
+    remainingByBottle.set(bottle, bottle.remainingAtAnchor);
+  }
+
+  const availableQueue: B[] = [];
+  const availabilityEvents: B[] = [];
+  for (const bottle of ordered) {
+    if (bottle.purchasedAt <= anchoredAt) availableQueue.push(bottle);
+    else if (bottle.purchasedAt <= now) availabilityEvents.push(bottle);
+  }
+
+  const drain = (from: number, to: number) => {
+    if (to <= from) return;
+    let toConsume = consumptionBetween(from, to);
+    for (const bottle of availableQueue) {
+      if (toConsume <= 0) break;
+      const current = remainingByBottle.get(bottle) ?? 0;
+      const take = Math.min(current, toConsume);
+      remainingByBottle.set(bottle, Math.max(0, current - take));
+      toConsume -= take;
+    }
+  };
+
+  let cursor = anchoredAt;
+  let eventIndex = 0;
+  while (eventIndex < availabilityEvents.length) {
+    const availableAt = availabilityEvents[eventIndex].purchasedAt;
+    drain(cursor, availableAt);
+    cursor = availableAt;
+    while (
+      eventIndex < availabilityEvents.length &&
+      availabilityEvents[eventIndex].purchasedAt === availableAt
+    ) {
+      availableQueue.push(availabilityEvents[eventIndex]);
+      eventIndex += 1;
+    }
+  }
+  drain(cursor, now);
 
   const states: BottleState<B>[] = ordered.map((bottle) => {
-    const take = Math.min(bottle.remainingAtAnchor, toConsume);
-    toConsume -= take;
-    const remaining = Math.max(0, bottle.remainingAtAnchor - take);
+    const remaining = Math.max(0, remainingByBottle.get(bottle) ?? 0);
     return {
       bottle,
       remaining,
@@ -132,21 +256,57 @@ export function getBottleStates<B extends BottleLike>(
     };
   });
 
-  const open = states.find((s) => s.remaining > 0);
+  const open = states.find(
+    (s) => s.bottle.purchasedAt <= now && s.remaining > 0
+  );
   if (open) open.isOpen = true;
 
-  const onHandExact = states.reduce((sum, s) => sum + s.remaining, 0);
-  const nonEmpty = states.filter((s) => s.remaining > 0);
+  const availableStates = states.filter((s) => s.bottle.purchasedAt <= now);
+  const incomingStates = states.filter(
+    (s) => s.bottle.purchasedAt > now && s.remaining > 0
+  );
+  const onHandExact = availableStates.reduce((sum, s) => sum + s.remaining, 0);
+  const incomingCount = incomingStates.reduce((sum, s) => sum + s.remaining, 0);
+  const nonEmpty = availableStates.filter((s) => s.remaining > 0);
   return {
     states,
     onHandExact,
     onHand: Math.round(onHandExact),
+    incomingCount: Math.round(incomingCount),
+    incomingBottles: incomingStates.length,
+    nextIncomingAt:
+      incomingStates.length > 0 ? incomingStates[0].bottle.purchasedAt : null,
     openCostPerPill: open ? open.costPerPill : 0,
     sealedSpares: nonEmpty.length > 0 ? nonEmpty.length - 1 : 0,
     bottleCount: nonEmpty.length,
     openFillPct: open ? open.fillPct : 0,
     openRemaining: open ? Math.round(open.remaining) : 0,
   };
+}
+
+export function getBottleStates<B extends BottleLike>(
+  bottles: B[],
+  anchoredAt: number,
+  ratePerDay: number,
+  now: number = Date.now()
+): LedgerState<B> {
+  return getBottleLedger(
+    bottles,
+    anchoredAt,
+    now,
+    (from, to) => ((to - from) / MS_PER_DAY) * ratePerDay
+  );
+}
+
+export function getBottleStatesForDosages<B extends BottleLike>(
+  bottles: B[],
+  anchoredAt: number,
+  dosages: DosageLike[],
+  now: number = Date.now()
+): LedgerState<B> {
+  return getBottleLedger(bottles, anchoredAt, now, (from, to) =>
+    getDosageConsumptionBetween(dosages, from, to)
+  );
 }
 
 // --- Groups (ADR-0004) -------------------------------------------------------
@@ -184,6 +344,22 @@ export function getGroupState<B extends BottleLike>(
     m.bottles.map((b) => ({ ...b, supplementId: m.supplementId }))
   );
   const ledger = getBottleStates(tagged, anchoredAt, ratePerDay, now);
+  const open = ledger.states.find((s) => s.isOpen);
+  return { ...ledger, openSupplementId: open ? open.bottle.supplementId : null };
+}
+
+export function getGroupStateForDosages<B extends BottleLike>(
+  members: GroupMember<B>[],
+  anchoredAt: number,
+  memberDosages: (DosageLike & { personId: string })[],
+  now: number = Date.now()
+): GroupLedgerState<B> {
+  const tagged = members.flatMap((m) =>
+    m.bottles.map((b) => ({ ...b, supplementId: m.supplementId }))
+  );
+  const ledger = getBottleLedger(tagged, anchoredAt, now, (from, to) =>
+    getGroupConsumptionBetween(memberDosages, from, to)
+  );
   const open = ledger.states.find((s) => s.isOpen);
   return { ...ledger, openSupplementId: open ? open.bottle.supplementId : null };
 }

@@ -146,3 +146,39 @@ export const backfillBottlePurchaseUrls = internalMutation({
     return { updated };
   },
 });
+
+/**
+ * Baseline existing dosages for future usage reports. This does not claim a
+ * historical start date; it records the regimen known at migration time.
+ */
+export const backfillDosageEvents = internalMutation({
+  args: {},
+  returns: v.object({ created: v.number() }),
+  async handler(ctx) {
+    let created = 0;
+    const now = Date.now();
+    for (const d of await ctx.db.query("dosages").collect()) {
+      const existing = await ctx.db
+        .query("dosageEvents")
+        .withIndex("by_dosage", (q) => q.eq("dosageId", d._id))
+        .collect();
+      if (existing.some((e) => e.type === "baseline")) continue;
+
+      const supplement = await ctx.db.get(d.supplementId);
+      if (!supplement) continue;
+      await ctx.db.insert("dosageEvents", {
+        householdId: supplement.householdId,
+        dosageId: d._id,
+        supplementId: d.supplementId,
+        personId: d.personId,
+        type: "baseline",
+        occurredAt: now,
+        nextPillsPerWeek: (d.pillsPerWeek ?? 0) || (d.pillsPerDose ?? 0) * (d.daysPerWeek ?? 0),
+        pauseStartedAt: d.pausedAt,
+        pauseUntil: d.pauseUntil,
+      });
+      created++;
+    }
+    return { created };
+  },
+});

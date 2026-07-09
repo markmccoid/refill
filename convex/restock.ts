@@ -1,15 +1,15 @@
 import { mutation, query, MutationCtx, QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { Doc, Id } from "./_generated/dataModel";
-import { getActiveDosages, reanchorFor } from "./consumption";
+import { getActiveDosages, getPersonActiveDosages, reanchorFor } from "./consumption";
 import { requireMembership } from "./authz";
 import {
-  getBottleStates,
+  getBottleStatesForDosages,
   getConsumptionRate,
   getDaysLeft,
   getDosageWeekly,
   getGroupRate,
-  getGroupState,
+  getGroupStateForDosages,
 } from "../lib/supplement-utils";
 import {
   DEFAULT_COVERAGE_TARGET_DAYS,
@@ -32,6 +32,7 @@ interface SubjectState {
   name: string;
   imageUrl: string | null;
   onHand: number;
+  incomingCount: number;
   ratePerDay: number;
   daysLeft: number | null; // null = no forecast (nobody takes it)
   brands: Doc<"supplements">[]; // solo: [itself]; group: member brands
@@ -66,9 +67,15 @@ async function getSubjectStates(
   const states: SubjectState[] = [];
 
   for (const s of supplements.filter((s) => !s.groupId)) {
-    const rate = getConsumptionRate(await getActiveDosages(ctx, s._id));
+    const dosages = await getPersonActiveDosages(ctx, s._id);
+    const rate = getConsumptionRate(dosages, now);
     const anchoredAt = s.anchoredAt ?? s.createdAt ?? now;
-    const ledger = getBottleStates(bottlesOf.get(s._id) ?? [], anchoredAt, rate, now);
+    const ledger = getBottleStatesForDosages(
+      bottlesOf.get(s._id) ?? [],
+      anchoredAt,
+      dosages,
+      now
+    );
     const days = getDaysLeft(ledger.onHand, rate);
     states.push({
       kind: "supplement",
@@ -77,6 +84,7 @@ async function getSubjectStates(
       name: s.name,
       imageUrl: s.imageUrl ?? null,
       onHand: ledger.onHand,
+      incomingCount: ledger.incomingCount,
       ratePerDay: rate,
       daysLeft: Number.isFinite(days) ? days : null,
       brands: [s],
@@ -86,20 +94,24 @@ async function getSubjectStates(
 
   for (const g of groups) {
     const members = supplements.filter((s) => s.groupId === g._id);
+    const dosages = [];
     const weeklies: { personId: string; weekly: number }[] = [];
     for (const m of members) {
+      for (const d of await getPersonActiveDosages(ctx, m._id)) {
+        dosages.push(d);
+      }
       for (const d of await getActiveDosages(ctx, m._id)) {
         weeklies.push({ personId: d.personId, weekly: getDosageWeekly(d) });
       }
     }
     const rate = getGroupRate(weeklies);
-    const ledger = getGroupState(
+    const ledger = getGroupStateForDosages(
       members.map((m) => ({
         supplementId: m._id as string,
         bottles: bottlesOf.get(m._id) ?? [],
       })),
       g.anchoredAt,
-      rate,
+      dosages,
       now
     );
     const open =
@@ -112,6 +124,7 @@ async function getSubjectStates(
       name: g.name,
       imageUrl: open?.imageUrl ?? null,
       onHand: ledger.onHand,
+      incomingCount: ledger.incomingCount,
       ratePerDay: rate,
       daysLeft: Number.isFinite(days) ? days : null,
       brands: members,
@@ -194,6 +207,7 @@ export const picker = query({
         groupId: v.union(v.id("groups"), v.null()),
         name: v.string(),
         onHand: v.number(),
+        incomingCount: v.number(),
         daysLeft: v.union(v.number(), v.null()),
         urgent: v.boolean(),
         onPlan: v.boolean(),
@@ -218,6 +232,7 @@ export const picker = query({
           groupId: s.groupId,
           name: s.name,
           onHand: s.onHand,
+          incomingCount: s.incomingCount,
           daysLeft: s.daysLeft,
           urgent: s.daysLeft !== null && s.daysLeft <= forecastWindowDays,
           onPlan: item !== undefined,
@@ -277,6 +292,7 @@ export const plan = query({
         name: v.string(),
         imageUrl: v.union(v.string(), v.null()),
         onHand: v.number(),
+        incomingCount: v.number(),
         daysLeft: v.union(v.number(), v.null()),
         ratePerDay: v.number(),
         recommendedQty: v.number(),
@@ -352,11 +368,12 @@ export const plan = query({
         name: subject.name,
         imageUrl: subject.imageUrl,
         onHand: subject.onHand,
+        incomingCount: subject.incomingCount,
         daysLeft: subject.daysLeft,
         ratePerDay: subject.ratePerDay,
         recommendedQty: getRecommendedQty(
           subject.ratePerDay,
-          subject.onHand,
+          subject.onHand + subject.incomingCount,
           selectedBrand?.jarSize ?? 0,
           settings.coverageTargetDays
         ),
@@ -421,7 +438,7 @@ export const setPlan = mutation({
         groupId: s.groupId ?? undefined,
         qty: getRecommendedQty(
           s.ratePerDay,
-          s.onHand,
+          s.onHand + s.incomingCount,
           s.defaultBrand?.jarSize ?? 0,
           coverageTargetDays
         ),

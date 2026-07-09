@@ -1,7 +1,7 @@
 import { internalQuery, mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { getConsumptionRate } from "../lib/supplement-utils";
-import { getActiveDosages } from "./consumption";
+import { getActiveDosages, getPersonActiveDosages } from "./consumption";
 import { requireMembership, requireSupplementAccess } from "./authz";
 import { linkPurchaseUrl } from "./retailers";
 import { bottleDoc } from "./bottles";
@@ -46,6 +46,19 @@ export const list = query({
       ...supplementDoc.fields,
       consumptionRate: v.number(),
       bottles: v.array(bottleDoc),
+      dosages: v.array(
+        v.object({
+          _id: v.id("dosages"),
+          _creationTime: v.number(),
+          supplementId: v.id("supplements"),
+          personId: v.id("people"),
+          pillsPerWeek: v.optional(v.number()),
+          pausedAt: v.optional(v.number()),
+          pauseUntil: v.optional(v.number()),
+          pillsPerDose: v.optional(v.number()),
+          daysPerWeek: v.optional(v.number()),
+        })
+      ),
     })
   ),
   async handler(ctx, { householdId }) {
@@ -58,15 +71,17 @@ export const list = query({
     return await Promise.all(
       supplements.map(async (s) => {
         // Disabled people are paused — exclude their dosages from the rate.
-        const dosages = await getActiveDosages(ctx, s._id);
+        const activeDosages = await getActiveDosages(ctx, s._id);
+        const dosages = await getPersonActiveDosages(ctx, s._id);
         const bottles = await ctx.db
           .query("bottles")
           .withIndex("by_supplement", (q) => q.eq("supplementId", s._id))
           .collect();
         return {
           ...s,
-          consumptionRate: getConsumptionRate(dosages),
+          consumptionRate: getConsumptionRate(activeDosages),
           bottles,
+          dosages,
         };
       })
     );
