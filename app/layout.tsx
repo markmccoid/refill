@@ -1,10 +1,16 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { ConvexClientProvider } from "@/app/providers";
 import "@/app/globals.css";
 
 export const metadata: Metadata = {
   title: "Refill — Supplement Tracker",
   description: "Track household supplements, costs, and reorder prices.",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

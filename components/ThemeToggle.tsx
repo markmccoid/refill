@@ -49,7 +49,7 @@ export function ThemeToggle() {
 
   return (
     <div>
-      <div className="text-xs font-medium text-text-muted mb-1.5">Theme</div>
+      <div className="hidden text-xs font-medium text-text-muted mb-1.5 md:block">Theme</div>
       <div className="flex rounded-lg border border-border-strong overflow-hidden">
         {OPTIONS.map((opt) => (
           <button

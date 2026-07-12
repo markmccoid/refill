@@ -46,9 +46,9 @@ export function Sidebar() {
   };
 
   return (
-    <aside className="w-48 bg-surface-alt border-r border-border p-4 flex flex-col">
+    <aside className="mobile-nav fixed inset-x-0 bottom-0 z-40 flex h-[calc(4.25rem+env(safe-area-inset-bottom))] w-full flex-row border-t border-border bg-surface-alt px-1 pt-1 pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_24px_-18px_rgba(20,40,30,0.4)] md:static md:h-auto md:w-48 md:flex-col md:border-r md:border-t-0 md:p-4 md:shadow-none">
       {/* Brand */}
-      <div className="mb-1 pb-1 border-b border-border ">
+      <div className="mb-1 hidden pb-1 border-b border-border md:block">
         <div className="flex items-center">
           <Image
             src="/refill-logo.png"
@@ -61,7 +61,7 @@ export function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 space-y-0.5">
+      <nav className="flex min-w-0 flex-1 flex-row justify-around gap-0 md:block md:space-y-0.5">
         {nav.map((item) => {
           const isActive = pathname.startsWith("/insights")
             ? item.href.startsWith("/insights")
@@ -70,19 +70,15 @@ export function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
-              className={`block px-3 py-2 rounded-md text-sm transition-colors ${
+              aria-label={item.label}
+              className={`flex min-h-11 min-w-0 flex-1 items-center justify-center rounded-md px-1 py-1.5 text-center text-[10px] transition-colors md:block md:px-3 md:py-2 md:text-left md:text-sm ${
                 isActive
                   ? "bg-primary-light text-primary font-semibold"
                   : "text-text-muted hover:text-text hover:bg-text/5 font-medium"
               }`}
-              style={{
-                fontSize: "13.5px",
-                padding: "9px 11px",
-                borderRadius: "8px",
-              }}
             >
               <span className="flex items-center justify-between">
-                {item.label}
+                <span className="truncate">{item.label}</span>
                 {item.href.startsWith("/restock") &&
                   typeof restockBadge === "number" &&
                   restockBadge > 0 && (
@@ -96,8 +92,18 @@ export function Sidebar() {
         })}
       </nav>
 
+      <div className="fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom))] right-3 z-50 flex items-center gap-2 rounded-lg border border-border-strong bg-surface px-2 py-1.5 shadow-card md:hidden">
+        <ThemeToggle />
+        <button
+          onClick={handleSignOut}
+          className="min-h-11 px-2 text-xs font-medium text-text-muted"
+        >
+          Sign out
+        </button>
+      </div>
+
       {/* People + sign out */}
-      <div className="pt-4 border-t border-border space-y-3">
+      <div className="hidden pt-4 border-t border-border space-y-3 md:block">
         {people && people.length > 0 && (
           <div className="flex items-center gap-2">
             {people.map((p) => (
