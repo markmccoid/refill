@@ -173,13 +173,15 @@ export default defineSchema({
     .index("by_supplement", ["supplementId"]),
 
   // A store the household buys from (ADR-0006). First-class so saved links,
-  // average prices, shipping thresholds, and never-yet-purchased-from stores
-  // all have something to hang on. Managed inline; no delete in v1.
+  // average prices, shipping thresholds, standard shipping cost (slice 03), and
+  // never-yet-purchased-from stores all have something to hang on. Managed
+  // inline; no delete in v1.
   retailers: defineTable({
     householdId: v.id("households"),
     name: v.string(),
     baseUrl: v.optional(v.string()),
     freeShippingThreshold: v.optional(v.number()), // unset ≠ $0: "we don't know"
+    standardShippingCost: v.optional(v.number()), // unset ≠ $0: "we don't know"
     createdAt: v.number(),
   })
     .index("by_household", ["householdId"]),
@@ -194,26 +196,46 @@ export default defineSchema({
     .index("by_supplement", ["supplementId"])
     .index("by_retailer", ["retailerId"]),
 
-  // One line of the household's single active Restock Plan (ADR-0006). Subject
-  // is what runs out — a solo supplement XOR a group. Entered prices are
-  // session-scoped: they live (and die) with this row. Purchased rows are kept
-  // as history; only "active" rows are the plan.
+  // Restock candidate product: a labeled purchase URL at a retailer for a solo
+  // supplement XOR a group (ADR-0009). Retailer shipping knobs live on
+  // retailers.standardShippingCost (slice 03), not here.
+  candidateProducts: defineTable({
+    householdId: v.id("households"),
+    supplementId: v.optional(v.id("supplements")),
+    groupId: v.optional(v.id("groups")),
+    retailerId: v.id("retailers"),
+    url: v.string(),
+    label: v.string(),
+    count: v.optional(v.number()),
+    createdAt: v.number(),
+  })
+    .index("by_supplement", ["supplementId"])
+    .index("by_group", ["groupId"])
+    .index("by_household", ["householdId"]),
+
+  // One line of the household's single active Restock Plan (ADR-0006 / ADR-0009).
+  // Subject is what runs out — a solo supplement XOR a group. Exactly one
+  // candidate may be selected per item per cycle; entered price and planned
+  // quantity live on this row. Session-scoped — purchased rows are history.
   restockItems: defineTable({
     householdId: v.id("households"),
     supplementId: v.optional(v.id("supplements")), // solo subject…
     groupId: v.optional(v.id("groups")), // …XOR group subject
     qty: v.number(), // planned bottles; pre-filled from the recommendation
-    // The selected Offer = brand + retailer chosen together. For solo items
-    // selectedSupplementId always equals supplementId.
+    selectedCandidateId: v.optional(v.id("candidateProducts")),
+    enteredPrice: v.optional(v.number()), // cycle-scoped sticker for the selection
+    // Legacy Offer fields — kept optional so existing docs validate until
+    // migrations:migrateRestockItemsToCandidates strips them. Remove after cutover.
     selectedSupplementId: v.optional(v.id("supplements")),
     selectedRetailerId: v.optional(v.id("retailers")),
-    // Manually entered per-bottle sticker prices, keyed by (brand, retailer).
-    enteredPrices: v.array(
-      v.object({
-        supplementId: v.id("supplements"),
-        retailerId: v.id("retailers"),
-        price: v.number(),
-      })
+    enteredPrices: v.optional(
+      v.array(
+        v.object({
+          supplementId: v.id("supplements"),
+          retailerId: v.id("retailers"),
+          price: v.number(),
+        })
+      )
     ),
     status: v.union(v.literal("active"), v.literal("purchased")),
     addedAt: v.number(),

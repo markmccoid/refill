@@ -11,6 +11,8 @@
 import type * as auth from "../auth.js";
 import type * as authz from "../authz.js";
 import type * as bottles from "../bottles.js";
+import type * as candidateProducts from "../candidateProducts.js";
+import type * as candidateSeeding from "../candidateSeeding.js";
 import type * as consumption from "../consumption.js";
 import type * as costs from "../costs.js";
 import type * as dosages from "../dosages.js";
@@ -37,6 +39,8 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   authz: typeof authz;
   bottles: typeof bottles;
+  candidateProducts: typeof candidateProducts;
+  candidateSeeding: typeof candidateSeeding;
   consumption: typeof consumption;
   costs: typeof costs;
   dosages: typeof dosages;

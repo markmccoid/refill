@@ -72,7 +72,7 @@ async function buildGroupView(ctx: QueryCtx, g: Doc<"groups">) {
 }
 
 /** Member supplements of a group (the brands it pools). */
-async function groupMembers(ctx: MutationCtx, groupId: Id<"groups">) {
+export async function groupMembers(ctx: MutationCtx, groupId: Id<"groups">) {
   return await ctx.db
     .query("supplements")
     .withIndex("by_group", (q) => q.eq("groupId", groupId))
@@ -86,7 +86,7 @@ async function groupMembers(ctx: MutationCtx, groupId: Id<"groups">) {
  * the whole group shares one rate. A future per-brand override just lets one
  * member's rows differ.
  */
-async function setMemberDosages(
+export async function setMemberDosages(
   ctx: MutationCtx,
   supplementId: Id<"supplements">,
   dosages: { personId: Id<"people">; pillsPerWeek: number }[]
@@ -108,7 +108,7 @@ async function setMemberDosages(
 }
 
 /** Read the group's current per-person dosage from an existing member. */
-async function groupDosageTemplate(
+export async function groupDosageTemplate(
   ctx: MutationCtx,
   memberId: Id<"supplements">
 ) {
@@ -120,6 +120,68 @@ async function groupDosageTemplate(
     personId: d.personId,
     pillsPerWeek: d.pillsPerWeek ?? 0,
   }));
+}
+
+/** Shared body for groups.create and purchase-time group formation. */
+export async function createGroupFromSupplements(
+  ctx: MutationCtx,
+  args: {
+    householdId: Id<"households">;
+    name: string;
+    category?: string;
+    supplementIds: Id<"supplements">[];
+    dosages: { personId: Id<"people">; pillsPerWeek: number }[];
+  }
+): Promise<Id<"groups">> {
+  const { householdId, name, category, supplementIds, dosages } = args;
+  if (supplementIds.length < 2) {
+    throw new Error("A group needs at least two supplements.");
+  }
+  for (const id of supplementIds) {
+    const supplement = await ctx.db.get(id);
+    if (!supplement || supplement.householdId !== householdId) {
+      throw new Error("Supplement not in household.");
+    }
+  }
+  for (const id of supplementIds) await reanchorSupplement(ctx, id);
+
+  const now = Date.now();
+  const groupId = await ctx.db.insert("groups", {
+    householdId,
+    name,
+    category: category || undefined,
+    anchoredAt: now,
+    createdAt: now,
+  });
+
+  for (const id of supplementIds) {
+    await ctx.db.patch(id, { groupId, anchoredAt: now });
+    await setMemberDosages(ctx, id, dosages);
+  }
+  return groupId;
+}
+
+/** Shared body for groups.addMember and purchase-time group join. */
+export async function addSupplementToGroup(
+  ctx: MutationCtx,
+  groupId: Id<"groups">,
+  supplementId: Id<"supplements">
+) {
+  const group = await ctx.db.get(groupId);
+  if (!group) throw new Error("Group not found.");
+
+  await reanchorGroup(ctx, groupId);
+  await reanchorSupplement(ctx, supplementId);
+
+  const members = await groupMembers(ctx, groupId);
+  const template = members[0]
+    ? await groupDosageTemplate(ctx, members[0]._id)
+    : [];
+
+  const now = Date.now();
+  await ctx.db.patch(supplementId, { groupId, anchoredAt: now });
+  await setMemberDosages(ctx, supplementId, template);
+  await ctx.db.patch(groupId, { anchoredAt: now });
 }
 
 /**
@@ -138,30 +200,17 @@ export const create = mutation({
       v.object({ personId: v.id("people"), pillsPerWeek: v.number() })
     ),
   },
+  returns: v.id("groups"),
   async handler(ctx, { householdId, name, category, supplementIds, dosages }) {
     await requireMembership(ctx, householdId);
-    if (supplementIds.length < 2) {
-      throw new Error("A group needs at least two supplements.");
-    }
-    // Every brand being pooled must belong to this household.
     for (const id of supplementIds) await requireSupplementAccess(ctx, id);
-    // Freeze each member solo (at its own rate) up to now before pooling.
-    for (const id of supplementIds) await reanchorSupplement(ctx, id);
-
-    const now = Date.now();
-    const groupId = await ctx.db.insert("groups", {
+    return await createGroupFromSupplements(ctx, {
       householdId,
       name,
-      category: category || undefined,
-      anchoredAt: now,
-      createdAt: now,
+      category,
+      supplementIds,
+      dosages,
     });
-
-    for (const id of supplementIds) {
-      await ctx.db.patch(id, { groupId, anchoredAt: now });
-      await setMemberDosages(ctx, id, dosages);
-    }
-    return groupId;
   },
 });
 
@@ -172,23 +221,12 @@ export const create = mutation({
  */
 export const addMember = mutation({
   args: { groupId: v.id("groups"), supplementId: v.id("supplements") },
+  returns: v.null(),
   async handler(ctx, { groupId, supplementId }) {
-    const group = await requireGroupAccess(ctx, groupId);
+    await requireGroupAccess(ctx, groupId);
     await requireSupplementAccess(ctx, supplementId);
-    if (!group) throw new Error("Group not found.");
-
-    await reanchorGroup(ctx, groupId);
-    await reanchorSupplement(ctx, supplementId);
-
-    const members = await groupMembers(ctx, groupId);
-    const template = members[0]
-      ? await groupDosageTemplate(ctx, members[0]._id)
-      : [];
-
-    const now = Date.now();
-    await ctx.db.patch(supplementId, { groupId, anchoredAt: now });
-    await setMemberDosages(ctx, supplementId, template);
-    await ctx.db.patch(groupId, { anchoredAt: now });
+    await addSupplementToGroup(ctx, groupId, supplementId);
+    return null;
   },
 });
 

@@ -5,13 +5,24 @@ import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 
+export type PurchaseDestination =
+  | { kind: "existing"; supplementId: Id<"supplements"> }
+  | {
+      kind: "new";
+      name: string;
+      formGroupWithSubjectId?: Id<"supplements">;
+      joinGroupId?: Id<"groups">;
+    };
+
 export interface PurchaseLineInput {
   itemId: Id<"restockItems">;
   itemName: string;
   brandName: string; // the selected brand (differs from itemName for groups)
   defaultQty: number;
   defaultPrice: number | null; // entered price, falling back to average
-  defaultCount: number; // the brand's jarSize
+  defaultCount: number; // the candidate's count (pills per bottle)
+  /** Slice 06 temp default — slice 09 adds Land-as radios. */
+  destination: PurchaseDestination;
 }
 
 interface LineState {
@@ -103,6 +114,7 @@ export function PurchaseDialog({
           qty: p.qty,
           pricePerBottle: p.price,
           countPerBottle: p.count,
+          destination: p.line.destination,
         })),
       });
       onClose();

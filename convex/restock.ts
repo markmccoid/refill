@@ -2,7 +2,15 @@ import { mutation, query, MutationCtx, QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { Doc, Id } from "./_generated/dataModel";
 import { getActiveDosages, getPersonActiveDosages, reanchorFor } from "./consumption";
-import { requireMembership } from "./authz";
+import { requireMembership, requireSupplementAccess } from "./authz";
+import {
+  addSupplementToGroup,
+  createGroupFromSupplements,
+  groupDosageTemplate,
+  groupMembers,
+} from "./groups";
+import { upsertSavedLink } from "./retailers";
+import { assertExistingDestinationAllowed } from "../lib/purchase-destination-utils";
 import {
   getBottleStatesForDosages,
   getConsumptionRate,
@@ -16,10 +24,18 @@ import {
   DEFAULT_FORECAST_WINDOW_DAYS,
   getRecommendedQty,
 } from "../lib/restock-utils";
+import {
+  buildBasketLines,
+  cheapestBasketRetailerIds,
+  computeRetailerBasket,
+  lowestPerPillCandidateIds,
+} from "../lib/restock-basket-math";
 
-// The Restock Planner backend (ADR-0006). One active plan per household,
-// user-curated only; retailer orders are derived, never stored; purchases land
-// as individual bottle rows through the same re-anchor path as bottles.add.
+// The Restock Planner backend (ADR-0006 / ADR-0009). One active plan per
+// household, user-curated only; retailer baskets are derived server-side from
+// selected candidates — never stored; purchases land as individual bottle rows.
+
+// Legacy offer fields may still exist on documents until migration clears them.
 
 // --- Subject states ----------------------------------------------------------
 // A "subject" is what runs out: a solo supplement or a whole group (never an
@@ -144,6 +160,25 @@ function subjectOf(
   );
 }
 
+async function listCandidatesForItem(
+  ctx: QueryCtx | MutationCtx,
+  item: Doc<"restockItems">
+): Promise<Doc<"candidateProducts">[]> {
+  if (item.supplementId) {
+    return await ctx.db
+      .query("candidateProducts")
+      .withIndex("by_supplement", (q) => q.eq("supplementId", item.supplementId))
+      .collect();
+  }
+  if (item.groupId) {
+    return await ctx.db
+      .query("candidateProducts")
+      .withIndex("by_group", (q) => q.eq("groupId", item.groupId))
+      .collect();
+  }
+  return [];
+}
+
 async function activeItems(
   ctx: QueryCtx | MutationCtx,
   householdId: Id<"households">
@@ -164,6 +199,68 @@ function settingsOf(household: Doc<"households"> | null) {
       household?.coverageTargetDays ?? DEFAULT_COVERAGE_TARGET_DAYS,
   };
 }
+
+const candidateSummary = v.object({
+  _id: v.id("candidateProducts"),
+  retailerId: v.id("retailers"),
+  retailerName: v.string(),
+  url: v.string(),
+  label: v.string(),
+  count: v.union(v.number(), v.null()),
+});
+
+const basketLineValidator = v.object({
+  itemId: v.id("restockItems"),
+  itemName: v.string(),
+  candidateId: v.id("candidateProducts"),
+  candidateLabel: v.string(),
+  qty: v.number(),
+  unitPrice: v.union(v.number(), v.null()),
+  lineTotal: v.union(v.number(), v.null()),
+  perPill: v.union(v.number(), v.null()),
+});
+
+const basketValidator = v.object({
+  retailerId: v.id("retailers"),
+  retailerName: v.string(),
+  freeShippingThreshold: v.optional(v.number()),
+  standardShippingCost: v.optional(v.number()),
+  lines: v.array(basketLineValidator),
+  subtotal: v.number(),
+  complete: v.boolean(),
+  appliedShipping: v.union(v.number(), v.null()),
+  allIn: v.union(v.number(), v.null()),
+  shippingUnknown: v.boolean(),
+  gapToFreeShipping: v.union(v.number(), v.null()),
+  freeShippingMet: v.boolean(),
+  thresholdUnset: v.boolean(),
+  cheapest: v.boolean(),
+});
+
+const planItemValidator = v.object({
+  _id: v.id("restockItems"),
+  qty: v.number(),
+  addedAt: v.number(),
+  subjectKind: v.union(v.literal("supplement"), v.literal("group")),
+  supplementId: v.union(v.id("supplements"), v.null()),
+  groupId: v.union(v.id("groups"), v.null()),
+  name: v.string(),
+  imageUrl: v.union(v.string(), v.null()),
+  onHand: v.number(),
+  incomingCount: v.number(),
+  daysLeft: v.union(v.number(), v.null()),
+  ratePerDay: v.number(),
+  recommendedQty: v.number(),
+  defaultJarSize: v.number(),
+  selectedCandidateId: v.union(v.id("candidateProducts"), v.null()),
+  enteredPrice: v.union(v.number(), v.null()),
+  candidates: v.array(candidateSummary),
+  // Requires ≥2 candidates with entered price + count; with single enteredPrice
+  // on the item only the selected candidate is priced — always [] until multi-price.
+  lowestPerPillCandidateIds: v.array(v.id("candidateProducts")),
+  /** Default existing destination for Mark-as-Purchased (slice 06 temp UI). */
+  defaultDestinationSupplementId: v.id("supplements"),
+});
 
 // --- Queries -----------------------------------------------------------------
 
@@ -211,7 +308,7 @@ export const picker = query({
         daysLeft: v.union(v.number(), v.null()),
         urgent: v.boolean(),
         onPlan: v.boolean(),
-        hasPlanWork: v.boolean(), // entered prices or a selection would be lost
+        hasPlanWork: v.boolean(), // entered price or a selection would be lost
       })
     ),
   }),
@@ -238,7 +335,8 @@ export const picker = query({
           onPlan: item !== undefined,
           hasPlanWork:
             item !== undefined &&
-            (item.enteredPrices.length > 0 || item.selectedRetailerId !== undefined),
+            (item.enteredPrice !== undefined ||
+              item.selectedCandidateId !== undefined),
         };
       })
       .sort((a, b) => (a.daysLeft ?? Infinity) - (b.daysLeft ?? Infinity));
@@ -247,25 +345,9 @@ export const picker = query({
   },
 });
 
-const offerValidator = v.object({
-  supplementId: v.id("supplements"),
-  brandName: v.string(),
-  brand: v.union(v.string(), v.null()),
-  jarSize: v.number(),
-  retailerId: v.id("retailers"),
-  retailerName: v.string(),
-  url: v.union(v.string(), v.null()),
-  avgPrice: v.union(v.number(), v.null()),
-  enteredPrice: v.union(v.number(), v.null()),
-  selected: v.boolean(),
-});
-
 /**
  * The whole plan, enriched for the page: each active item with its subject's
- * live forecast, the recommended quantity, and its offers (brand × retailer:
- * saved link, average past price from the bottle ledger, entered price,
- * selection). Retailer orders are derived client-side from this — no order
- * entity exists.
+ * live forecast, candidate products, and server-derived retailer baskets.
  */
 export const plan = query({
   args: { householdId: v.id("households") },
@@ -280,30 +362,12 @@ export const plan = query({
         name: v.string(),
         baseUrl: v.optional(v.string()),
         freeShippingThreshold: v.optional(v.number()),
+        standardShippingCost: v.optional(v.number()),
         createdAt: v.number(),
       })
     ),
-    items: v.array(
-      v.object({
-        _id: v.id("restockItems"),
-        qty: v.number(),
-        addedAt: v.number(),
-        subjectKind: v.union(v.literal("supplement"), v.literal("group")),
-        name: v.string(),
-        imageUrl: v.union(v.string(), v.null()),
-        onHand: v.number(),
-        incomingCount: v.number(),
-        daysLeft: v.union(v.number(), v.null()),
-        ratePerDay: v.number(),
-        recommendedQty: v.number(),
-        // The selected (or default) brand's jar size — the per-pill divisor
-        // for solo items, whose offer rows don't repeat it per brand.
-        defaultJarSize: v.number(),
-        selectedSupplementId: v.union(v.id("supplements"), v.null()),
-        selectedRetailerId: v.union(v.id("retailers"), v.null()),
-        offers: v.array(offerValidator),
-      })
-    ),
+    items: v.array(planItemValidator),
+    baskets: v.array(basketValidator),
   }),
   async handler(ctx, { householdId }) {
     await requireMembership(ctx, householdId);
@@ -314,57 +378,72 @@ export const plan = query({
       .query("retailers")
       .withIndex("by_household", (q) => q.eq("householdId", householdId))
       .collect();
+    const retailerById = new Map(retailers.map((r) => [r._id, r]));
 
-    const enriched = [];
+    type EnrichedItem = {
+      _id: Id<"restockItems">;
+      qty: number;
+      addedAt: number;
+      subjectKind: "supplement" | "group";
+      supplementId: Id<"supplements"> | null;
+      groupId: Id<"groups"> | null;
+      name: string;
+      imageUrl: string | null;
+      onHand: number;
+      incomingCount: number;
+      daysLeft: number | null;
+      ratePerDay: number;
+      recommendedQty: number;
+      defaultJarSize: number;
+      selectedCandidateId: Id<"candidateProducts"> | null;
+      enteredPrice: number | null;
+      candidates: Array<{
+        _id: Id<"candidateProducts">;
+        retailerId: Id<"retailers">;
+        retailerName: string;
+        url: string;
+        label: string;
+        count: number | null;
+      }>;
+      lowestPerPillCandidateIds: Id<"candidateProducts">[];
+      defaultDestinationSupplementId: Id<"supplements">;
+    };
+
+    const enriched: EnrichedItem[] = [];
+    const basketGroups = new Map<
+      Id<"retailers">,
+      {
+        item: EnrichedItem;
+        candidate: Doc<"candidateProducts">;
+      }[]
+    >();
+
     for (const item of items.sort((a, b) => a.addedAt - b.addedAt)) {
       const subject = subjectOf(states, item);
-      if (!subject) continue; // subject deleted/dissolved since it was added
+      if (!subject) continue;
 
-      // Average past price per (brand, retailer) from the bottle ledger.
-      const offers = [];
-      for (const brand of subject.brands) {
-        const bottles = await ctx.db
-          .query("bottles")
-          .withIndex("by_supplement", (q) => q.eq("supplementId", brand._id))
-          .collect();
-        const links = await ctx.db
-          .query("savedLinks")
-          .withIndex("by_supplement", (q) => q.eq("supplementId", brand._id))
-          .collect();
-        for (const r of retailers) {
-          const past = bottles.filter((b) => b.retailerId === r._id);
-          const avgPrice =
-            past.length > 0
-              ? past.reduce((sum, b) => sum + b.price, 0) / past.length
-              : null;
-          const entered = item.enteredPrices.find(
-            (p) => p.supplementId === brand._id && p.retailerId === r._id
-          );
-          offers.push({
-            supplementId: brand._id,
-            brandName: brand.name,
-            brand: brand.brand ?? null,
-            jarSize: brand.jarSize,
-            retailerId: r._id,
-            retailerName: r.name,
-            url: links.find((l) => l.retailerId === r._id)?.url ?? null,
-            avgPrice,
-            enteredPrice: entered ? entered.price : null,
-            selected:
-              item.selectedSupplementId === brand._id &&
-              item.selectedRetailerId === r._id,
-          });
-        }
-      }
+      const rawCandidates = await listCandidatesForItem(ctx, item);
+      const candidates = rawCandidates.map((c) => ({
+        _id: c._id,
+        retailerId: c.retailerId,
+        retailerName: retailerById.get(c.retailerId)?.name ?? "Unknown",
+        url: c.url,
+        label: c.label,
+        count: c.count ?? null,
+      }));
 
-      const selectedBrand =
-        subject.brands.find((b) => b._id === item.selectedSupplementId) ??
-        subject.defaultBrand;
-      enriched.push({
+      const selectedCandidate = item.selectedCandidateId
+        ? rawCandidates.find((c) => c._id === item.selectedCandidateId) ?? null
+        : null;
+      const bottleCount = selectedCandidate?.count ?? 0;
+
+      const planItem = {
         _id: item._id,
         qty: item.qty,
         addedAt: item.addedAt,
         subjectKind: subject.kind,
+        supplementId: subject.supplementId,
+        groupId: subject.groupId,
         name: subject.name,
         imageUrl: subject.imageUrl,
         onHand: subject.onHand,
@@ -374,17 +453,91 @@ export const plan = query({
         recommendedQty: getRecommendedQty(
           subject.ratePerDay,
           subject.onHand + subject.incomingCount,
-          selectedBrand?.jarSize ?? 0,
+          bottleCount,
           settings.coverageTargetDays
         ),
-        defaultJarSize: selectedBrand?.jarSize ?? 0,
-        selectedSupplementId: item.selectedSupplementId ?? null,
-        selectedRetailerId: item.selectedRetailerId ?? null,
-        offers,
+        defaultJarSize: bottleCount,
+        selectedCandidateId: item.selectedCandidateId ?? null,
+        enteredPrice: item.enteredPrice ?? null,
+        candidates,
+        lowestPerPillCandidateIds: lowestPerPillCandidateIds(
+          rawCandidates.map((c) => ({
+            candidateId: c._id,
+            enteredPrice:
+              c._id === item.selectedCandidateId
+                ? (item.enteredPrice ?? null)
+                : null,
+            count: c.count ?? null,
+          }))
+        ) as Id<"candidateProducts">[],
+        defaultDestinationSupplementId:
+          subject.defaultBrand?._id ?? subject.brands[0]!._id,
+      };
+
+      enriched.push(planItem);
+
+      if (selectedCandidate) {
+        const lines = basketGroups.get(selectedCandidate.retailerId) ?? [];
+        lines.push({ item: planItem, candidate: selectedCandidate });
+        basketGroups.set(selectedCandidate.retailerId, lines);
+      }
+    }
+
+    const baskets = [];
+    const nudgeInputs = [];
+
+    for (const [retailerId, group] of basketGroups) {
+      const retailer = retailerById.get(retailerId);
+      if (!retailer) continue;
+
+      const lineInputs = group.map(({ item, candidate }) => ({
+        qty: item.qty,
+        enteredPrice: item.enteredPrice,
+        candidateCount: candidate.count ?? null,
+      }));
+
+      const built = buildBasketLines(lineInputs);
+      const basketMath = computeRetailerBasket(lineInputs, {
+        freeShippingThreshold: retailer.freeShippingThreshold,
+        standardShippingCost: retailer.standardShippingCost,
+      });
+
+      const lines = group.map(({ item, candidate }, i) => ({
+        itemId: item._id,
+        itemName: item.name,
+        candidateId: candidate._id,
+        candidateLabel: candidate.label,
+        qty: item.qty,
+        unitPrice: built[i].unitPrice,
+        lineTotal: built[i].lineTotal,
+        perPill: built[i].perPill,
+      }));
+
+      const basket = {
+        retailerId,
+        retailerName: retailer.name,
+        freeShippingThreshold: retailer.freeShippingThreshold,
+        standardShippingCost: retailer.standardShippingCost,
+        lines,
+        ...basketMath,
+        cheapest: false,
+      };
+
+      baskets.push(basket);
+      nudgeInputs.push({
+        retailerId: retailerId as string,
+        complete: basket.complete,
+        shippingUnknown: basket.shippingUnknown,
+        allIn: basket.allIn,
       });
     }
 
-    return { ...settings, retailers, items: enriched };
+    const cheapestIds = new Set(cheapestBasketRetailerIds(nudgeInputs));
+    for (const basket of baskets) {
+      basket.cheapest = cheapestIds.has(basket.retailerId as string);
+    }
+
+    return { ...settings, retailers, items: enriched, baskets };
   },
 });
 
@@ -393,8 +546,8 @@ export const plan = query({
 /**
  * Reconcile plan membership to the picker's checked set — the modal is the only
  * membership editor, and doing it in one mutation makes concurrent edits safe
- * (at most one active item per subject). Removed items are deleted, prices and
- * all: session-scoped by design.
+ * (at most one active item per subject). Removed items are deleted; prices and
+ * selection die with the session row.
  */
 export const setPlan = mutation({
   args: {
@@ -412,7 +565,6 @@ export const setPlan = mutation({
     const wantSupp = new Set<string>(supplementIds);
     const wantGroup = new Set<string>(groupIds);
 
-    // Remove unchecked (and orphaned) active items.
     for (const item of items) {
       const keep = item.groupId
         ? wantGroup.has(item.groupId)
@@ -422,7 +574,6 @@ export const setPlan = mutation({
       if (!keep) await ctx.db.delete(item._id);
     }
 
-    // Add newly checked subjects (skip ones already on the plan).
     const now = Date.now();
     for (const s of states) {
       const id = (s.groupId ?? s.supplementId) as string;
@@ -442,7 +593,6 @@ export const setPlan = mutation({
           s.defaultBrand?.jarSize ?? 0,
           coverageTargetDays
         ),
-        enteredPrices: [],
         status: "active",
         addedAt: now,
       });
@@ -486,63 +636,51 @@ export const setQty = mutation({
   },
 });
 
-/** Enter (or clear, with null) the sticker price for one (brand, retailer). */
+/** Enter (or clear, with null) the cycle-scoped sticker price for the item. */
 export const setPrice = mutation({
   args: {
     id: v.id("restockItems"),
-    supplementId: v.id("supplements"),
-    retailerId: v.id("retailers"),
     price: v.union(v.number(), v.null()),
   },
   returns: v.null(),
-  async handler(ctx, { id, supplementId, retailerId, price }) {
+  async handler(ctx, { id, price }) {
     const item = await requireActiveItem(ctx, id);
-    const rest = item.enteredPrices.filter(
-      (p) => !(p.supplementId === supplementId && p.retailerId === retailerId)
-    );
-    if (price !== null && price >= 0) {
-      rest.push({ supplementId, retailerId, price });
+    if (price !== null && price >= 0 && Number.isFinite(price)) {
+      await ctx.db.patch(item._id, { enteredPrice: price });
+    } else {
+      await ctx.db.patch(item._id, { enteredPrice: undefined });
     }
-    await ctx.db.patch(item._id, { enteredPrices: rest });
     return null;
   },
 });
 
 /**
- * Select an offer — brand + retailer in one act (Q3/Q6). Passing nulls clears
- * the selection. Totals recompute reactively; nothing else is stored.
+ * Select a candidate product for this item — or clear with null. Totals
+ * recompute reactively from the derived baskets.
  */
-export const selectOffer = mutation({
+export const selectCandidate = mutation({
   args: {
     id: v.id("restockItems"),
-    supplementId: v.union(v.id("supplements"), v.null()),
-    retailerId: v.union(v.id("retailers"), v.null()),
+    candidateId: v.union(v.id("candidateProducts"), v.null()),
   },
   returns: v.null(),
-  async handler(ctx, { id, supplementId, retailerId }) {
+  async handler(ctx, { id, candidateId }) {
     const item = await requireActiveItem(ctx, id);
-    if (supplementId === null || retailerId === null) {
-      await ctx.db.patch(item._id, {
-        selectedSupplementId: undefined,
-        selectedRetailerId: undefined,
-      });
+    if (candidateId === null) {
+      await ctx.db.patch(item._id, { selectedCandidateId: undefined });
       return null;
     }
-    // The brand must be the item's subject (solo) or a member of it (group).
-    const brand = await ctx.db.get(supplementId);
-    if (!brand) throw new Error("Brand not found.");
-    const valid = item.groupId
-      ? brand.groupId === item.groupId
-      : item.supplementId === supplementId;
-    if (!valid) throw new Error("That brand doesn't fulfil this item.");
-    const retailer = await ctx.db.get(retailerId);
-    if (!retailer || retailer.householdId !== item.householdId) {
-      throw new Error("Retailer not found.");
+    const candidate = await ctx.db.get(candidateId);
+    if (!candidate || candidate.householdId !== item.householdId) {
+      throw new Error("Candidate not found.");
     }
-    await ctx.db.patch(item._id, {
-      selectedSupplementId: supplementId,
-      selectedRetailerId: retailerId,
-    });
+    const valid = item.groupId
+      ? candidate.groupId === item.groupId
+      : item.supplementId === candidate.supplementId;
+    if (!valid) {
+      throw new Error("That candidate doesn't fulfil this item.");
+    }
+    await ctx.db.patch(item._id, { selectedCandidateId: candidateId });
     return null;
   },
 });
@@ -560,12 +698,114 @@ async function syncAnchorCache(
   await ctx.db.patch(supplementId, { quantityAnchor: total });
 }
 
+const purchaseDestinationValidator = v.union(
+  v.object({
+    kind: v.literal("existing"),
+    supplementId: v.id("supplements"),
+  }),
+  v.object({
+    kind: v.literal("new"),
+    name: v.string(),
+    formGroupWithSubjectId: v.optional(v.id("supplements")),
+    joinGroupId: v.optional(v.id("groups")),
+  })
+);
+
+async function resolvePurchaseDestination(
+  ctx: MutationCtx,
+  item: Doc<"restockItems">,
+  destination: {
+    kind: "existing";
+    supplementId: Id<"supplements">;
+  } | {
+    kind: "new";
+    name: string;
+    formGroupWithSubjectId?: Id<"supplements">;
+    joinGroupId?: Id<"groups">;
+  },
+  jarSize: number
+): Promise<Id<"supplements">> {
+  if (destination.kind === "existing") {
+    const supplement = await requireSupplementAccess(ctx, destination.supplementId);
+    if (!supplement) throw new Error("Destination supplement not found.");
+
+    const itemSubject = item.groupId
+      ? { kind: "group" as const, groupId: item.groupId }
+      : {
+          kind: "supplement" as const,
+          supplementId: item.supplementId!,
+        };
+    const groupMemberIds = item.groupId
+      ? (await groupMembers(ctx, item.groupId)).map((m) => m._id)
+      : [];
+
+    assertExistingDestinationAllowed({
+      itemSubject,
+      destinationSupplementId: destination.supplementId,
+      groupMemberIds,
+    });
+    return destination.supplementId;
+  }
+
+  const name = destination.name.trim();
+  if (!name) throw new Error("New supplement name is required.");
+
+  if (destination.formGroupWithSubjectId && destination.joinGroupId) {
+    throw new Error("Cannot form a group and join a group on the same purchase.");
+  }
+  if (destination.formGroupWithSubjectId) {
+    if (item.groupId) {
+      throw new Error("Form-group is only valid for solo subjects.");
+    }
+    if (destination.formGroupWithSubjectId !== item.supplementId) {
+      throw new Error("Form-group subject must match the plan item.");
+    }
+  }
+  if (destination.joinGroupId) {
+    if (!item.groupId) {
+      throw new Error("Join-group is only valid for group subjects.");
+    }
+    if (destination.joinGroupId !== item.groupId) {
+      throw new Error("Join-group must match the plan item's group.");
+    }
+  }
+
+  const now = Date.now();
+  const newSupplementId = await ctx.db.insert("supplements", {
+    householdId: item.householdId,
+    name,
+    jarSize,
+    quantityAnchor: 0,
+    anchoredAt: now,
+    createdAt: now,
+  });
+
+  if (destination.joinGroupId) {
+    await addSupplementToGroup(ctx, destination.joinGroupId, newSupplementId);
+    return newSupplementId;
+  }
+
+  if (destination.formGroupWithSubjectId) {
+    const subject = await ctx.db.get(destination.formGroupWithSubjectId);
+    if (!subject) throw new Error("Subject supplement not found.");
+    const dosages = await groupDosageTemplate(ctx, destination.formGroupWithSubjectId);
+    await createGroupFromSupplements(ctx, {
+      householdId: item.householdId,
+      name: subject.name,
+      category: subject.category,
+      supplementIds: [destination.formGroupWithSubjectId, newSupplementId],
+      dosages,
+    });
+    return newSupplementId;
+  }
+
+  return newSupplementId;
+}
+
 /**
  * Complete one retailer order (Q7). Each confirmed line lands as `qty`
- * individual bottle rows on the selected brand — full at a fresh anchor, so
- * re-anchoring and forecast refresh work exactly like bottles.add — then the
- * item leaves the plan (status "purchased", prices dying with the session).
- * Lines the user unchecked in the dialog simply aren't sent.
+ * individual bottle rows on the chosen destination supplement — full at a fresh
+ * anchor. Candidates stay durable; destinations are explicit (match-or-add).
  */
 export const markPurchased = mutation({
   args: {
@@ -577,6 +817,7 @@ export const markPurchased = mutation({
         qty: v.number(),
         pricePerBottle: v.number(),
         countPerBottle: v.number(),
+        destination: purchaseDestinationValidator,
       })
     ),
   },
@@ -586,33 +827,46 @@ export const markPurchased = mutation({
     if (!retailer) throw new Error("Retailer not found.");
     await requireMembership(ctx, retailer.householdId);
 
+    if (!Number.isFinite(purchasedAt)) {
+      throw new Error("Invalid purchase date.");
+    }
+
     const now = Date.now();
     for (const line of lines) {
       const item = await requireActiveItem(ctx, line.itemId);
       if (item.householdId !== retailer.householdId) {
         throw new Error("Item and retailer belong to different households.");
       }
-      if (item.selectedRetailerId !== retailerId) {
+      if (!item.selectedCandidateId) {
+        throw new Error("No candidate selected for an item.");
+      }
+      const candidate = await ctx.db.get(item.selectedCandidateId);
+      if (!candidate || candidate.retailerId !== retailerId) {
         throw new Error(`"${item._id}" isn't assigned to this retailer.`);
       }
-      const brandId = item.selectedSupplementId;
-      if (!brandId) throw new Error("No brand selected for an item.");
+
       const qty = Math.max(1, Math.round(line.qty));
-      const count = Math.max(1, Math.round(line.countPerBottle));
+      const countFromLine = Math.round(line.countPerBottle);
+      const count = Math.max(
+        1,
+        Number.isFinite(countFromLine) && countFromLine >= 1
+          ? countFromLine
+          : (candidate.count ?? 1)
+      );
       const price = Math.max(0, line.pricePerBottle);
+      const url = candidate.url;
 
-      const links = await ctx.db
-        .query("savedLinks")
-        .withIndex("by_supplement", (q) => q.eq("supplementId", brandId))
-        .collect();
-      const url = links.find((l) => l.retailerId === retailerId)?.url;
+      const destinationSupplementId = await resolvePurchaseDestination(
+        ctx,
+        item,
+        line.destination,
+        count
+      );
 
-      // Freeze existing bottles at the current rate, then append full bottles —
-      // the same sequence as bottles.add.
-      await reanchorFor(ctx, brandId);
+      await reanchorFor(ctx, destinationSupplementId);
       for (let i = 0; i < qty; i++) {
         await ctx.db.insert("bottles", {
-          supplementId: brandId,
+          supplementId: destinationSupplementId,
           count,
           price,
           purchaseUrl: url,
@@ -621,7 +875,14 @@ export const markPurchased = mutation({
           remainingAtAnchor: count,
         });
       }
-      await syncAnchorCache(ctx, brandId);
+      await syncAnchorCache(ctx, destinationSupplementId);
+      await upsertSavedLink(
+        ctx,
+        item.householdId,
+        destinationSupplementId,
+        retailerId,
+        url
+      );
 
       await ctx.db.patch(item._id, { status: "purchased", purchasedAt: now });
     }

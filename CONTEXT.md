@@ -39,7 +39,7 @@ What was paid for one specific bottle. Stored per bottle so cost is accurate as 
 _Avoid_: price (unqualified), cost
 
 **Retailer**:
-A store the household buys supplements from (e.g. Amazon, Vitacost), known household-wide. Carries a **free-shipping threshold**. Bottles record which Retailer they came from; a household can know a Retailer it has never bought from yet.
+A store the household buys supplements from (e.g. Amazon, Vitacost), known household-wide. Carries an optional **free-shipping threshold** and optional **standard shipping cost** (the flat fee below that threshold). Both unset mean "unknown", not zero. Bottles record which Retailer they came from; a household can know a Retailer it has never bought from yet.
 _Avoid_: site (the old scraping-era framing), store, vendor, shop
 
 **Purchase link**:
@@ -47,8 +47,8 @@ Where a specific bottle was bought, stored per bottle since bottles may come fro
 _Avoid_: purchase URL (unqualified, the old supplement-level field)
 
 **Saved purchase link**:
-A remembered URL for buying a given Supplement at a given Retailer — the product page you'd reopen to restock. One per supplement-retailer pair; exists independently of whether a bottle was ever bought there. Written two ways: directly in the planner, or automatically when a bottle is logged with a purchase link (the most recent purchase's URL wins). Distinct from a bottle's **purchase link**, which records where one physical bottle actually came from.
-_Avoid_: conflating with the per-bottle purchase link
+A remembered URL for buying a given Supplement at a given Retailer — the product page you'd reopen to restock. One per supplement-retailer pair; exists independently of whether a bottle was ever bought there. Written two ways: directly in the planner, or automatically when a bottle is logged with a purchase link (the most recent purchase's URL wins). Distinct from a bottle's **purchase link**, which records where one physical bottle actually came from. Also distinct from a **Candidate Product** — saved links may seed candidates on a subject but are not themselves comparison options in the Restock UI.
+_Avoid_: conflating with the per-bottle purchase link, conflating with a Candidate Product
 
 **Cost per pill**:
 A bottle's price ÷ its count. The **open bottle's** cost per pill is the current rate driving spend; it steps up as each bottle empties (FIFO).
@@ -73,23 +73,23 @@ Snapshotting each bottle's current remaining as its new anchor with anchored-at 
 ### Restocking
 
 **Restock Plan**:
-The household's single active purchasing worksheet: the supplements to buy this cycle, each with entered prices, a chosen Retailer, and a planned quantity. Membership is **user-curated only** — items are picked from a run-out-ordered list of the household's supplements; the forecast informs the pick (ordering, urgency badge) but never adds or removes items itself. Persists until its items are purchased or removed — there is no explicit "start"/"end" action.
+The household's single active purchasing worksheet: the supplements to buy this cycle, each with a **selected candidate**, entered price, and planned quantity. Membership is **user-curated only** — items are picked from a run-out-ordered list of the household's supplements; the forecast informs the pick (ordering, urgency badge) but never adds or removes items itself. Persists until its items are purchased or removed — there is no explicit "start"/"end" action.
 _Avoid_: cart (nothing is transacted in-app), shopping list (unqualified), buy list, auto-population (rejected — the plan only contains what the user chose)
 
 **Restock item**:
-One line of the Restock Plan. Its subject is what runs out — a solo Supplement or a whole Group — never an individual grouped brand. Fulfilling a Group item means choosing a member brand *and* a Retailer; the purchase lands as a bottle of that brand and the recommended quantity is computed from the Group's pooled rate.
+One line of the Restock Plan. Its subject is what runs out — a solo Supplement or a whole Group — never an individual grouped brand. Fulfilling an item means **selecting one candidate** from that subject's list; the purchase lands via **match-or-add** to a Supplement (existing or new) at **Mark as Purchased**. The recommended quantity is computed from the subject's consumption rate and the selected candidate's count.
 _Avoid_: listing grouped brands as separate items
 
-**Offer**:
-One purchasable option on a Restock item: a (brand, Retailer) pair carrying the saved purchase link, the derived **average price** (mean of past bottle prices for that brand at that Retailer), and the manually **entered price** (per-bottle sticker, shipping- and tax-exclusive). Also shows a derived **price per pill** (price ÷ the brand's jar size) so offers with different bottle sizes compare fairly — the number that matters when a Group's brands come in different counts. A solo Supplement's offers vary only by Retailer; a Group item's offers span brand × Retailer. Exactly one offer per item may be **selected** — selecting picks brand and Retailer together and feeds the Retailer's order total.
-_Avoid_: quote (the dead scraping-era concept), price row
+**Candidate Product**:
+A durable purchasable option attached to a restock **subject** (solo Supplement or Group) — not to the Restock Plan or an individual grouped brand. Carries **Retailer**, **URL**, **label** (freeform product display name — not a Supplement name), and **count** (bottle size for $/pill on this product). Many per subject; not locked to brands currently in inventory — substitutes and brands never yet stocked are allowed. On a solo subject, a substitute at a different brand becomes a **new Supplement** at purchase time (with an optional offer to form a **Group** — always shown, user decides). One candidate per URL per subject (literal URL match; edit in place to update). **Label** is required; **count** is required for $/pill comparison but a candidate may be saved or even selected without it (subtotal still works; $/pill nudges skip until count is set). Exactly one candidate may be **selected** per Restock item per cycle; entered price and planned quantity live on the Restock item, not on the candidate. Deleted when the subject is deleted; unaffected when a Restock item is removed from the plan. When a Group auto-dissolves to one member, candidates **migrate** to the surviving solo Supplement (dedupe Retailer + URL); on full Group teardown, deleted with the Group. Distinct from a **Saved purchase link** — that remains per (Supplement, Retailer) and may seed candidates but does not participate in comparison UI. Replaces the old **Offer** matrix.
+_Avoid_: offer (retired term), quote (the dead scraping-era concept), binding a candidate to a Supplement before purchase
 
 **Restock session**:
 The lifespan of the active Restock Plan — from first item to last item purchased or removed. Entered prices live only within it; a completed or removed item's prices are discarded, not carried into the next cycle.
 _Avoid_: browser session (it survives reloads and devices)
 
 **Retailer order**:
-The derived grouping of a plan's selected items by Retailer: items, quantities, per-bottle prices, subtotal (Σ qty × entered price), and free-shipping status (gap to threshold, or "threshold not set"). Computed from the items, never stored. **Mark as Purchased** acts on one Retailer order, with a confirmation that lets actuals (price, count, quantity, inclusion) differ from the plan.
+The derived grouping of a plan's selected items by Retailer: items, quantities, entered prices, **subtotal** (sum of priced lines only — unpriced lines show "no price" and do not contribute), **applied shipping** (the Retailer's standard shipping cost when the basket is below free-shipping threshold or the threshold is unset; zero when threshold is met), and **all-in total** (subtotal + applied shipping). Also carries free-shipping status: gap to threshold (on subtotal only — shipping does not affect the gap), threshold met, threshold not set, or shipping unknown (below threshold but no standard shipping cost on the Retailer). A basket is **complete** when every line has an entered price; **shipping-known** when not shipping-unknown. Computed from the items, never stored. **Mark as Purchased** acts on one Retailer order, with a confirmation that lets actuals (price, count, quantity, inclusion) differ from the plan. Restock **nudges** (informational only): **lowest $/pill** per item among candidates with entered price and count; **cheapest basket** among complete, shipping-known baskets with an all-in total; gap / free-shipping-met per retailer when threshold is set.
 _Avoid_: order (unqualified), cart
 
 **Forecast window**:

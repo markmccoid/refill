@@ -1,10 +1,12 @@
 import { internalMutation } from "./_generated/server";
 import { v } from "convex/values";
+import { Id } from "./_generated/dataModel";
 import {
   getConsumptionRate,
   getOnHand,
   getBottleBreakdown,
 } from "../lib/supplement-utils";
+import { seedHouseholdInCtx } from "./candidateSeeding";
 
 /**
  * One-time backfill to the consumption model. Idempotent — safe to re-run.
@@ -182,3 +184,188 @@ export const backfillDosageEvents = internalMutation({
     return { created };
   },
 });
+
+/**
+ * One-time silent candidate seed from saved links + bottle URL fallbacks (ADR-0009).
+ * Idempotent — skips URLs that already exist on each subject.
+ *
+ * Run once per deployment after slice 04 ships:
+ *   npx convex run migrations:seedAllHouseholds
+ * Or invoke `migrations:seedAllHouseholds` from the Convex dashboard.
+ */
+export const seedAllHouseholds = internalMutation({
+  args: {},
+  returns: v.object({
+    households: v.number(),
+    subjects: v.number(),
+    created: v.number(),
+  }),
+  async handler(ctx) {
+    let households = 0;
+    let subjects = 0;
+    let created = 0;
+
+    for (const household of await ctx.db.query("households").collect()) {
+      const result = await seedHouseholdInCtx(ctx, household._id);
+      households++;
+      subjects += result.subjects;
+      created += result.created;
+    }
+
+    return { households, subjects, created };
+  },
+});
+
+/**
+ * Cutover restockItems from legacy Offer fields to Candidate Products
+ * (ADR-0009 slice 05). Idempotent. Always strips legacy fields so documents
+ * match the post-Offer schema.
+ *
+ * Run once (dev or prod) after pulling slice 05+:
+ *   npx convex run --push migrations:migrateRestockItemsToCandidates
+ * Or from the Convex dashboard → Functions → migrations:migrateRestockItemsToCandidates → Run.
+ */
+export const migrateRestockItemsToCandidates = internalMutation({
+  args: {},
+  returns: v.object({
+    scanned: v.number(),
+    migrated: v.number(),
+    cleared: v.number(),
+    candidatesCreated: v.number(),
+    strippedOnly: v.number(),
+  }),
+  async handler(ctx) {
+    let scanned = 0;
+    let migrated = 0;
+    let cleared = 0;
+    let candidatesCreated = 0;
+    let strippedOnly = 0;
+
+    const items = await ctx.db.query("restockItems").collect();
+
+    for (const item of items) {
+      scanned++;
+      const legacy = item as typeof item & LegacyRestockFields;
+
+      // Already on candidates and no leftover Offer keys — skip.
+      if (
+        legacy.selectedCandidateId !== undefined &&
+        !hasLegacyFields(legacy)
+      ) {
+        continue;
+      }
+
+      // Already has candidate selection — just strip leftover Offer fields.
+      if (legacy.selectedCandidateId !== undefined) {
+        await ctx.db.patch(item._id, clearLegacyPatch() as never);
+        strippedOnly++;
+        continue;
+      }
+
+      const legacySupp = legacy.selectedSupplementId;
+      const legacyRetailer = legacy.selectedRetailerId;
+      const legacyPrices = legacy.enteredPrices ?? [];
+
+      if (!legacySupp || !legacyRetailer) {
+        if (hasLegacyFields(legacy)) {
+          await ctx.db.patch(item._id, clearLegacyPatch() as never);
+          cleared++;
+        }
+        continue;
+      }
+
+      const links = await ctx.db
+        .query("savedLinks")
+        .withIndex("by_supplement", (q) => q.eq("supplementId", legacySupp))
+        .collect();
+      const url = links.find((l) => l.retailerId === legacyRetailer)?.url;
+
+      if (!url) {
+        await ctx.db.patch(item._id, clearLegacyPatch() as never);
+        cleared++;
+        continue;
+      }
+
+      const brand = await ctx.db.get(legacySupp);
+      if (!brand) {
+        await ctx.db.patch(item._id, clearLegacyPatch() as never);
+        cleared++;
+        continue;
+      }
+
+      const existing = item.supplementId
+        ? await ctx.db
+            .query("candidateProducts")
+            .withIndex("by_supplement", (q) =>
+              q.eq("supplementId", item.supplementId)
+            )
+            .collect()
+        : item.groupId
+          ? await ctx.db
+              .query("candidateProducts")
+              .withIndex("by_group", (q) => q.eq("groupId", item.groupId))
+              .collect()
+          : [];
+
+      let candidate = existing.find(
+        (c) => c.retailerId === legacyRetailer && c.url === url
+      );
+
+      if (!candidate) {
+        const candidateId = await ctx.db.insert("candidateProducts", {
+          householdId: item.householdId,
+          supplementId: item.supplementId,
+          groupId: item.groupId,
+          retailerId: legacyRetailer,
+          url,
+          label: brand.name,
+          count: brand.jarSize > 0 ? brand.jarSize : undefined,
+          createdAt: Date.now(),
+        });
+        candidate = (await ctx.db.get(candidateId))!;
+        candidatesCreated++;
+      }
+
+      const entered = legacyPrices.find(
+        (p) =>
+          p.supplementId === legacySupp && p.retailerId === legacyRetailer
+      );
+
+      await ctx.db.patch(item._id, {
+        selectedCandidateId: candidate._id,
+        enteredPrice: entered?.price,
+        ...(clearLegacyPatch() as Record<string, undefined>),
+      });
+      migrated++;
+    }
+
+    return { scanned, migrated, cleared, candidatesCreated, strippedOnly };
+  },
+});
+
+type LegacyRestockFields = {
+  selectedSupplementId?: Id<"supplements">;
+  selectedRetailerId?: Id<"retailers">;
+  enteredPrices?: Array<{
+    supplementId: Id<"supplements">;
+    retailerId: Id<"retailers">;
+    price: number;
+  }>;
+  selectedCandidateId?: Id<"candidateProducts">;
+};
+
+function hasLegacyFields(legacy: LegacyRestockFields): boolean {
+  return (
+    legacy.selectedSupplementId !== undefined ||
+    legacy.selectedRetailerId !== undefined ||
+    legacy.enteredPrices !== undefined
+  );
+}
+
+function clearLegacyPatch(): Record<string, undefined> {
+  return {
+    selectedSupplementId: undefined,
+    selectedRetailerId: undefined,
+    enteredPrices: undefined,
+  };
+}

@@ -1,6 +1,10 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { requireRetailerAccess, requireSupplementAccess } from "./authz";
+import {
+  maybeSeedFromSavedLink,
+  maybeSeedFromUrlChange,
+} from "./candidateSeeding";
 
 // Saved purchase links (ADR-0006): the product URL you'd reopen to restock a
 // supplement at a retailer. One per (supplement, retailer), written through
@@ -52,8 +56,28 @@ export const upsert = mutation({
       if (mine) await ctx.db.delete(mine._id);
       return null;
     }
+
+    const previousUrl = mine?.url;
     if (mine) await ctx.db.patch(mine._id, { url: trimmed });
     else await ctx.db.insert("savedLinks", { supplementId, retailerId, url: trimmed });
+
+    await maybeSeedFromSavedLink(
+      ctx,
+      supplement.householdId,
+      supplementId,
+      retailerId,
+      trimmed
+    );
+    if (previousUrl && previousUrl !== trimmed) {
+      await maybeSeedFromUrlChange(
+        ctx,
+        supplement.householdId,
+        supplementId,
+        retailerId,
+        previousUrl,
+        trimmed
+      );
+    }
     return null;
   },
 });
