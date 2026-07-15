@@ -13,6 +13,7 @@ import {
 import { SupplementFactsPanel } from "@/components/SupplementFactsPanel";
 import { DosageInput } from "@/components/DosageInput";
 import { BottleFields } from "@/components/BottleFields";
+import { CandidateSummaryCard } from "@/components/restock/CandidateSummaryCard";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -673,6 +674,19 @@ export default function SupplementDetailPage() {
                 </a>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* Solo-subject restock candidates (ADR-0009). Grouped brands use the
+            group row on /supplements — candidates live on the group subject. */}
+        {!isEditing && !group && (
+          <div className="border-t border-border-strong pt-4">
+            <CandidateSummaryCard
+              householdId={supplement.householdId}
+              subjectKind="supplement"
+              subjectId={supplement._id}
+              subjectName={supplement.name}
+            />
           </div>
         )}
 

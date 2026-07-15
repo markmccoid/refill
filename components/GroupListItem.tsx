@@ -6,6 +6,7 @@ import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { DosageInput } from "@/components/DosageInput";
+import { CandidateSummaryCard } from "@/components/restock/CandidateSummaryCard";
 import {
   getGroupStateForDosages,
   getDaysLeft,
@@ -177,6 +178,13 @@ export function GroupListItem({
       {/* Expanded breakdown */}
       {expanded && (
         <div className="border-t border-border-strong p-4 space-y-4">
+          <CandidateSummaryCard
+            householdId={householdId}
+            subjectKind="group"
+            subjectId={group._id}
+            subjectName={group.name}
+          />
+
           <div>
             <p className="text-xs font-semibold text-text-label uppercase tracking-wide mb-2">
               Consuming in this order (oldest purchase first)
