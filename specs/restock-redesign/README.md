@@ -6,11 +6,11 @@ You are implementing the Restock decision-support redesign in Refill. **Read thi
 
 Implement slices **in order**. Each slice must leave a runnable artifact and pass its verification gates before the next slice starts. Do not re-litigate decisions locked in ADR-0009 or `.scratch/restock-redesign/`.
 
-**Status:** Slices 01–07 complete. 2026-07-14.
+**Status:** Slices 01–07 complete; slice 08 UI rewritten (visual gates open). 2026-07-14.
 
-**Next pickup:** [Slice 08 — Restock two-pane UI](slices/08-restock-two-pane-ui.md)
+**Next pickup:** Finish [Slice 08](slices/08-restock-two-pane-ui.md) visual/compare gates, then [Slice 09](slices/09-purchase-dialog-cleanup-qa.md).
 
-**Blockers:** None.
+**Blockers:** None. Note: slices 01–06 backend files remain uncommitted on this branch alongside slice 08 WIP — commit them before/with 08.
 
 ### Global checklist
 
@@ -21,15 +21,13 @@ Implement slices **in order**. Each slice must leave a runnable artifact and pas
 - [x] 05 — Restock plan backend (replace Offer projection)
 - [x] 06 — `markPurchased` match-or-add backend
 - [x] 07 — Shared candidate drawer + subject summary card
-- [ ] 08 — Restock page two-pane UI (Variant A)
+- [ ] 08 — Restock page two-pane UI (Variant A) — **code in tree; visual gates open**
 - [ ] 09 — Purchase dialog match-or-add + legacy removal + final QA
 
-### Evidence from current pass (slice 07)
+### Evidence from current pass
 
-**07:** `CandidateDrawer` + `CandidateSummaryCard`; solo on supplement detail; group on expanded `GroupListItem`; `listBySubject.selectedOnActivePlan` + `remove` clears plan selection; RetailerDialog z-index above drawer
-- Smoke: Manage → add candidate → summary updates; duplicate URL blocked + expands existing; import preview empty when no novel links
-- Visual: `assets/slice-07/` vs prototype Variant C (hierarchy match); screenshot-critique accepted with noted muted import / sparse lower panel (Variant C parity)
-- `npm test` 46/46; `tsc --noEmit` green
+**07 (committed `74ebb4d`):** CandidateDrawer + CandidateSummaryCard; solo + group surfaces; duplicate URL blocked; assets in `assets/slice-07/`
+**08 (WIP, uncommitted):** Restock page ItemCard = selected row + retailer chips + Manage→CandidateDrawer; BasketCard = accents + shipping/all-in; plan items expose `supplementId`/`groupId`; `tsc` green. Still need screenshot-critique + compare vs Variant A with 2+ items/retailers.
 
 **Before ending your pass:** update this section with status, evidence (commands run, files touched), and the next pickup slice.
 

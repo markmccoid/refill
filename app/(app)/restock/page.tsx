@@ -8,18 +8,20 @@ import { useHousehold } from "@/hooks/useHousehold";
 import { getRunOutDate } from "@/lib/supplement-utils";
 import { RestockPickerModal } from "@/components/restock/RestockPickerModal";
 import { RetailerDialog } from "@/components/restock/RetailerDialog";
+import { CandidateDrawer } from "@/components/restock/CandidateDrawer";
 import {
   PurchaseDialog,
   PurchaseLineInput,
 } from "@/components/restock/PurchaseDialog";
+import { retailerAccent } from "@/lib/retailer-accent";
+import { Id } from "@/convex/_generated/dataModel";
 
 type PlanData = FunctionReturnType<typeof api.restock.plan>;
 type PlanItem = PlanData["items"][number];
-type Offer = PlanItem["offers"][number];
+type PlanBasket = PlanData["baskets"][number];
 type Retailer = PlanData["retailers"][number];
 
 const money = (n: number) => `$${n.toFixed(2)}`;
-// Cost per pill: sub-dollar amounts read better in cents ("8.3¢" vs "$0.08").
 const perPill = (n: number) =>
   n >= 1 ? `$${n.toFixed(2)}` : `${(n * 100).toFixed(1)}¢`;
 
@@ -43,35 +45,35 @@ export default function RestockPage() {
     return <div className="text-center py-12">Loading restock plan...</div>;
   }
 
-  // Retailer orders are derived, never stored (ADR-0006): group items by their
-  // selected offer. An item whose selection no longer resolves to an offer
-  // (e.g. the brand left its group) counts as unselected.
-  const orders = new Map<string, { item: PlanItem; offer: Offer }[]>();
-  for (const item of plan.items) {
-    const offer = item.offers.find((o) => o.selected);
-    if (!offer) continue;
-    const lines = orders.get(offer.retailerId) ?? [];
-    lines.push({ item, offer });
-    orders.set(offer.retailerId, lines);
-  }
   const unassigned = plan.items.filter(
-    (i) => !i.offers.some((o) => o.selected)
+    (i) => i.selectedCandidateId === null
   ).length;
+  const cheapestBaskets = plan.baskets.filter((b) => b.cheapest);
 
   const purchaseLines: PurchaseLineInput[] = purchaseFor
-    ? (orders.get(purchaseFor._id) ?? []).map(({ item, offer }) => ({
-        itemId: item._id,
-        itemName: item.name,
-        brandName: offer.brandName,
-        defaultQty: item.qty,
-        defaultPrice: offer.enteredPrice ?? offer.avgPrice,
-        defaultCount: offer.jarSize,
-      }))
+    ? (plan.baskets.find((b) => b.retailerId === purchaseFor._id)?.lines ?? []).map(
+        (line) => {
+          const planItem = plan.items.find((i) => i._id === line.itemId);
+          return {
+            itemId: line.itemId,
+            itemName: line.itemName,
+            brandName: line.candidateLabel,
+            defaultQty: line.qty,
+            defaultPrice: line.unitPrice,
+            defaultCount:
+              planItem?.candidates.find((c) => c._id === line.candidateId)
+                ?.count ?? 1,
+            destination: {
+              kind: "existing" as const,
+              supplementId: planItem!.defaultDestinationSupplementId,
+            },
+          };
+        }
+      )
     : [];
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Restock</h1>
@@ -95,7 +97,6 @@ export default function RestockPage() {
         </div>
       </div>
 
-      {/* Settings knobs (ADR-0006): urgency window + coverage target */}
       <div className="flex items-center gap-6 text-sm text-text-muted bg-surface-alt border border-border rounded-lg px-4 py-2.5">
         <SettingsKnob
           label="Flag items running out within"
@@ -116,7 +117,6 @@ export default function RestockPage() {
       </div>
 
       <div className="grid gap-6 xl:grid-cols-3 items-start">
-        {/* Plan items */}
         <div className="xl:col-span-2 space-y-4">
           {plan.items.length === 0 ? (
             <div className="border border-dashed border-border-strong rounded-xl p-10 text-center text-sm text-text-muted">
@@ -133,13 +133,14 @@ export default function RestockPage() {
             plan.items.map((item) => (
               <ItemCard
                 key={item._id}
+                householdId={householdId}
                 item={item}
                 hasRetailers={plan.retailers.length > 0}
                 onAddRetailer={() => setRetailerDialog({ retailer: null })}
                 onRemove={() => {
                   const hasWork =
-                    item.offers.some((o) => o.enteredPrice !== null) ||
-                    item.offers.some((o) => o.selected);
+                    item.enteredPrice !== null ||
+                    item.selectedCandidateId !== null;
                   if (
                     !hasWork ||
                     window.confirm(
@@ -154,35 +155,42 @@ export default function RestockPage() {
           )}
         </div>
 
-        {/* Order totals — derived grouping of selections by retailer */}
-        <div className="space-y-4">
+        <aside className="space-y-4 xl:sticky xl:top-4">
           <h2 className="text-sm font-bold uppercase tracking-wide text-text-muted">
-            Order totals
+            Retailer baskets
           </h2>
-          {orders.size === 0 ? (
+          {cheapestBaskets.length >= 2 && (
+            <p className="text-xs text-primary font-semibold bg-primary-light/40 border border-primary/20 rounded-lg px-3 py-2">
+              Cheapest all-in:{" "}
+              {cheapestBaskets.map((b) => b.retailerName).join(" · ")}
+            </p>
+          )}
+          {plan.baskets.length === 0 ? (
             <div className="border border-dashed border-border-strong rounded-xl p-6 text-center text-xs text-text-muted">
-              Select a retailer on an item to start an order.
+              Select a retailer option on an item to start a basket.
             </div>
           ) : (
-            plan.retailers
-              .filter((r) => orders.has(r._id))
-              .map((r) => (
-                <OrderCard
-                  key={r._id}
-                  retailer={r}
-                  lines={orders.get(r._id)!}
-                  onEdit={() => setRetailerDialog({ retailer: r })}
-                  onPurchase={() => setPurchaseFor(r)}
+            plan.baskets.map((basket) => {
+              const retailer =
+                plan.retailers.find((r) => r._id === basket.retailerId) ?? null;
+              if (!retailer) return null;
+              return (
+                <BasketCard
+                  key={basket.retailerId}
+                  basket={basket}
+                  onEdit={() => setRetailerDialog({ retailer })}
+                  onPurchase={() => setPurchaseFor(retailer)}
                 />
-              ))
+              );
+            })
           )}
           {unassigned > 0 && (
             <p className="text-xs text-text-muted">
-              {unassigned} item{unassigned === 1 ? "" : "s"} without a retailer
+              {unassigned} item{unassigned === 1 ? "" : "s"} without a candidate
               selected yet.
             </p>
           )}
-        </div>
+        </aside>
       </div>
 
       {showPicker && (
@@ -241,18 +249,32 @@ function SettingsKnob({
 }
 
 function ItemCard({
+  householdId,
   item,
   hasRetailers,
   onAddRetailer,
   onRemove,
 }: {
+  householdId: Id<"households">;
   item: PlanItem;
   hasRetailers: boolean;
   onAddRetailer: () => void;
   onRemove: () => void;
 }) {
   const setQty = useMutation(api.restock.setQty);
+  const setPrice = useMutation(api.restock.setPrice);
+  const selectCandidate = useMutation(api.restock.selectCandidate);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
   const isGroup = item.subjectKind === "group";
+  const selected =
+    item.candidates.find((c) => c._id === item.selectedCandidateId) ?? null;
+  const selectedAccent = selected ? retailerAccent(selected.retailerId) : null;
+  const lowestIds = new Set(item.lowestPerPillCandidateIds);
+  const subjectId = (item.groupId ?? item.supplementId) as
+    | Id<"supplements">
+    | Id<"groups">;
+
   const runOut =
     item.daysLeft === null
       ? null
@@ -262,7 +284,7 @@ function ItemCard({
         });
 
   return (
-    <div className="bg-surface border border-border-strong rounded-xl p-5 space-y-4">
+    <article className="bg-surface border border-border-strong rounded-xl p-5 space-y-4">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
@@ -279,9 +301,6 @@ function ItemCard({
               <> + {Math.round(item.incomingCount)} incoming</>
             )}{" "}
             ·{" "}
-            {!isGroup && item.defaultJarSize > 0 && (
-              <>{item.defaultJarSize}-ct bottles · </>
-            )}
             {item.daysLeft === null ? (
               "no forecast"
             ) : (
@@ -329,7 +348,7 @@ function ItemCard({
 
       {!hasRetailers ? (
         <div className="border border-dashed border-border-strong rounded-lg p-4 text-center text-xs text-text-muted">
-          Add a retailer to start comparing prices.{" "}
+          Add a retailer to start comparing candidates.{" "}
           <button
             onClick={onAddRetailer}
             className="text-primary font-semibold hover:underline"
@@ -337,282 +356,256 @@ function ItemCard({
             + Add retailer
           </button>
         </div>
-      ) : (
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-[11px] uppercase tracking-wide text-text-muted text-left">
-              {isGroup && <th className="pb-1.5 font-semibold">Brand</th>}
-              <th className="pb-1.5 font-semibold">Retailer</th>
-              <th className="pb-1.5 font-semibold">Link</th>
-              <th className="pb-1.5 font-semibold text-right">Avg</th>
-              <th className="pb-1.5 font-semibold text-right">Price</th>
-              <th className="pb-1.5 font-semibold text-right">$ / pill</th>
-              <th className="pb-1.5 font-semibold text-center">Buy here</th>
-            </tr>
-          </thead>
-          <tbody>
-            {item.offers.map((offer) => (
-              <OfferRow
-                key={`${offer.supplementId}-${offer.retailerId}`}
-                item={item}
-                offer={offer}
-                showBrand={isGroup}
-              />
-            ))}
-          </tbody>
-        </table>
-      )}
-    </div>
-  );
-}
-
-function OfferRow({
-  item,
-  offer,
-  showBrand,
-}: {
-  item: PlanItem;
-  offer: Offer;
-  showBrand: boolean;
-}) {
-  const setPrice = useMutation(api.restock.setPrice);
-  const selectOffer = useMutation(api.restock.selectOffer);
-  const upsertLink = useMutation(api.savedLinks.upsert);
-  const [editingLink, setEditingLink] = useState(false);
-
-  const commitLink = (url: string) => {
-    setEditingLink(false);
-    if (url.trim() !== (offer.url ?? "")) {
-      upsertLink({
-        supplementId: offer.supplementId,
-        retailerId: offer.retailerId,
-        url,
-      });
-    }
-  };
-
-  return (
-    <tr
-      className={`border-t border-border ${offer.selected ? "bg-primary-light" : ""}`}
-    >
-      {showBrand && (
-        <td className="py-2 pr-2 text-xs">
-          {offer.brandName}
-          {offer.brand && (
-            <span className="text-text-muted"> · {offer.brand}</span>
-          )}
-          {offer.jarSize > 0 && (
-            <span className="text-text-muted whitespace-nowrap">
-              {" "}
-              · {offer.jarSize} ct
-            </span>
-          )}
-        </td>
-      )}
-      <td className="py-2 pr-2 font-medium">{offer.retailerName}</td>
-      <td className="py-2 pr-2">
-        {editingLink ? (
-          <input
-            type="text"
-            autoFocus
-            defaultValue={offer.url ?? ""}
-            placeholder="Paste product URL"
-            onBlur={(e) => commitLink(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") commitLink(e.currentTarget.value);
-              if (e.key === "Escape") setEditingLink(false);
-            }}
-            className="w-40 px-2 py-1 text-xs border border-border-strong rounded-md bg-surface"
-          />
-        ) : offer.url ? (
-          <span className="flex items-center gap-1.5">
-            <a
-              href={offer.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-primary font-semibold text-xs hover:underline whitespace-nowrap"
-            >
-              Check Site ↗
-            </a>
-            <button
-              onClick={() => setEditingLink(true)}
-              title="Edit link"
-              className="text-text-muted hover:text-text text-xs"
-            >
-              ✎
-            </button>
-          </span>
-        ) : (
+      ) : item.candidates.length === 0 ? (
+        <div className="border border-dashed border-border-strong rounded-lg p-4 text-center text-xs text-text-muted space-y-2">
+          <p>No candidate products yet for this subject.</p>
           <button
-            onClick={() => setEditingLink(true)}
-            className="text-xs text-text-muted hover:text-primary"
+            type="button"
+            onClick={() => setDrawerOpen(true)}
+            className="text-primary font-semibold hover:underline"
           >
-            + Add link
+            Manage options
           </button>
-        )}
-      </td>
-      <td className="py-2 pr-2 text-right text-xs text-text-muted whitespace-nowrap">
-        {offer.avgPrice !== null ? money(offer.avgPrice) : "—"}
-      </td>
-      <td className="py-2 pr-2 text-right">
-        <input
-          key={`${offer.supplementId}-${offer.retailerId}-${offer.enteredPrice}`}
-          type="number"
-          min="0"
-          step="0.01"
-          defaultValue={offer.enteredPrice ?? ""}
-          placeholder="0.00"
-          onBlur={(e) => {
-            const raw = e.target.value.trim();
-            const v = raw === "" ? null : parseFloat(raw);
-            const next = v !== null && Number.isFinite(v) && v >= 0 ? v : null;
-            if (next !== offer.enteredPrice) {
-              setPrice({
-                id: item._id,
-                supplementId: offer.supplementId,
-                retailerId: offer.retailerId,
-                price: next,
-              });
-            }
-          }}
-          className="w-20 px-2 py-1 text-sm border border-border-strong rounded-md bg-surface text-right"
-        />
-      </td>
-      <td className="py-2 pr-2 text-right text-xs whitespace-nowrap">
-        {(() => {
-          // Per-pill cost makes different bottle sizes comparable — the
-          // entered price when present, otherwise the average (marked).
-          const basis = offer.enteredPrice ?? offer.avgPrice;
-          if (basis === null || offer.jarSize <= 0)
-            return <span className="text-text-muted">—</span>;
-          const isAvg = offer.enteredPrice === null;
-          return (
-            <span
-              className={isAvg ? "text-text-muted" : "font-semibold"}
-              title={isAvg ? "Based on average past price" : undefined}
+        </div>
+      ) : (
+        <>
+          {selected && selectedAccent ? (
+            <div
+              className={`rounded-lg border border-l-4 px-3 py-2.5 flex flex-wrap items-center gap-x-3 gap-y-2 ${selectedAccent.selectedRow}`}
             >
-              {perPill(basis / offer.jarSize)}
-              {isAvg && <span className="text-[10px]"> avg</span>}
-            </span>
-          );
-        })()}
-      </td>
-      <td className="py-2 text-center">
-        <button
-          onClick={() =>
-            selectOffer(
-              offer.selected
-                ? { id: item._id, supplementId: null, retailerId: null }
-                : {
-                    id: item._id,
-                    supplementId: offer.supplementId,
-                    retailerId: offer.retailerId,
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium">{selected.label}</p>
+                <p className="text-xs text-text-muted">
+                  {selected.retailerName}
+                </p>
+              </div>
+              <a
+                href={selected.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs font-semibold text-primary hover:underline shrink-0"
+              >
+                Check Site ↗
+              </a>
+              <input
+                key={`${item._id}-${item.enteredPrice}`}
+                type="number"
+                min={0}
+                step={0.01}
+                placeholder="Price"
+                defaultValue={item.enteredPrice ?? ""}
+                onBlur={(e) => {
+                  const raw = e.target.value.trim();
+                  const v = raw === "" ? null : parseFloat(raw);
+                  const next =
+                    v !== null && Number.isFinite(v) && v >= 0 ? v : null;
+                  if (next !== item.enteredPrice) {
+                    setPrice({ id: item._id, price: next });
                   }
-            )
-          }
-          title={offer.selected ? "Deselect" : "Buy from this retailer"}
-          className={`w-5 h-5 rounded-full border-2 inline-flex items-center justify-center transition-colors ${
-            offer.selected
-              ? "border-primary bg-primary"
-              : "border-border-strong hover:border-primary"
-          }`}
-        >
-          {offer.selected && (
-            <span className="w-2 h-2 rounded-full bg-surface" />
+                }}
+                className="w-20 px-2 py-1 text-sm border border-border-strong rounded-md bg-surface text-right"
+              />
+              {selected.count !== null &&
+                selected.count > 0 &&
+                item.enteredPrice !== null && (
+                  <span className="text-xs font-semibold whitespace-nowrap">
+                    {perPill(item.enteredPrice / selected.count)}/pill
+                  </span>
+                )}
+            </div>
+          ) : (
+            <p className="text-xs text-text-muted border border-dashed border-border-strong rounded-lg p-3 text-center">
+              Select a retailer option below
+            </p>
           )}
-        </button>
-      </td>
-    </tr>
+
+          <div className="flex flex-wrap items-center gap-1.5">
+            {item.candidates.map((c) => {
+              const isSelected = item.selectedCandidateId === c._id;
+              const accent = retailerAccent(c.retailerId);
+              const showChipPerPill =
+                isSelected &&
+                item.enteredPrice !== null &&
+                c.count !== null &&
+                c.count > 0;
+              return (
+                <button
+                  key={c._id}
+                  type="button"
+                  onClick={() =>
+                    selectCandidate({
+                      id: item._id,
+                      candidateId: isSelected ? null : c._id,
+                    })
+                  }
+                  className={`text-[11px] px-2.5 py-1 rounded-full border transition-colors ${
+                    isSelected
+                      ? accent.chipSelected
+                      : "border-border text-text-muted hover:border-text-muted"
+                  }`}
+                >
+                  {c.retailerName}
+                  {showChipPerPill
+                    ? ` · ${perPill(item.enteredPrice! / c.count!)}`
+                    : ""}
+                  {lowestIds.has(c._id) && (
+                    <span
+                      className="ml-1 text-primary"
+                      title="Lowest $/pill among priced options"
+                    >
+                      ★
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              onClick={() => setDrawerOpen(true)}
+              className="text-[11px] text-primary font-semibold px-1"
+            >
+              Manage options
+            </button>
+          </div>
+        </>
+      )}
+
+      {subjectId && (
+        <CandidateDrawer
+          open={drawerOpen}
+          onClose={() => setDrawerOpen(false)}
+          householdId={householdId}
+          subjectKind={item.subjectKind}
+          subjectId={subjectId}
+          subjectName={item.name}
+          openedFrom="restock"
+        />
+      )}
+    </article>
   );
 }
 
-function OrderCard({
-  retailer,
-  lines,
+function BasketCard({
+  basket,
   onEdit,
   onPurchase,
 }: {
-  retailer: Retailer;
-  lines: { item: PlanItem; offer: Offer }[];
+  basket: PlanBasket;
   onEdit: () => void;
   onPurchase: () => void;
 }) {
-  const subtotal = lines.reduce(
-    (sum, { item, offer }) => sum + item.qty * (offer.enteredPrice ?? 0),
-    0
-  );
-  const missingPrices = lines.filter(
-    ({ offer }) => offer.enteredPrice === null
+  const accent = retailerAccent(basket.retailerId);
+  const missingPrices = basket.lines.filter(
+    (l) => l.lineTotal === null
   ).length;
-  const threshold = retailer.freeShippingThreshold;
-  const gap = threshold !== undefined ? threshold - subtotal : null;
 
   return (
-    <div className="bg-surface border border-border-strong rounded-xl p-4 space-y-3">
-      <div className="flex items-center justify-between">
-        <h3 className="font-bold text-sm">{retailer.name}</h3>
-        <button
-          onClick={onEdit}
-          title="Edit retailer"
-          className="text-text-muted hover:text-text text-xs"
-        >
-          ✎
-        </button>
+    <div
+      className={`bg-surface border border-border-strong border-l-4 rounded-xl p-4 space-y-3 ${accent.basketBorder} ${
+        basket.cheapest ? `ring-2 ${accent.basketRing}` : ""
+      }`}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="font-bold text-sm">{basket.retailerName}</h3>
+        <div className="flex items-center gap-2">
+          {basket.cheapest && (
+            <span className="text-[10px] font-bold uppercase tracking-wide text-primary bg-primary-light px-1.5 py-0.5 rounded">
+              Cheapest all-in
+            </span>
+          )}
+          <button
+            onClick={onEdit}
+            title="Edit retailer"
+            className="text-text-muted hover:text-text text-xs"
+          >
+            ✎
+          </button>
+        </div>
       </div>
 
       <ul className="space-y-1.5">
-        {lines.map(({ item, offer }) => (
-          <li
-            key={item._id}
-            className="flex justify-between gap-2 text-xs"
-          >
+        {basket.lines.map((line) => (
+          <li key={line.itemId} className="flex justify-between gap-2 text-xs">
             <span className="truncate">
-              {item.name}
-              {offer.brandName !== item.name && (
-                <span className="text-text-muted"> ({offer.brandName})</span>
+              {line.itemName}
+              {line.candidateLabel !== line.itemName && (
+                <span className="text-text-muted">
+                  {" "}
+                  ({line.candidateLabel})
+                </span>
               )}{" "}
-              × {item.qty}
+              × {line.qty}
             </span>
             <span className="whitespace-nowrap font-medium">
-              {offer.enteredPrice !== null
-                ? money(item.qty * offer.enteredPrice)
-                : "no price"}
+              {line.lineTotal !== null ? money(line.lineTotal) : "no price"}
             </span>
           </li>
         ))}
       </ul>
 
-      <div className="border-t border-border pt-2 flex justify-between text-sm font-bold">
-        <span>Subtotal</span>
-        <span>{money(subtotal)}</span>
+      <div className="space-y-1 text-sm">
+        <div className="flex justify-between">
+          <span className="text-text-muted">Subtotal</span>
+          <span className="font-medium">{money(basket.subtotal)}</span>
+        </div>
+        {basket.appliedShipping !== null && (
+          <div className="flex justify-between text-xs">
+            <span className="text-text-muted">Shipping</span>
+            <span>
+              {basket.appliedShipping === 0
+                ? "Free"
+                : money(basket.appliedShipping)}
+            </span>
+          </div>
+        )}
+        {basket.shippingUnknown && (
+          <p className="text-[11px] text-amber-700 font-medium">
+            Shipping cost unknown
+          </p>
+        )}
+        {basket.allIn !== null && (
+          <div className="flex justify-between font-bold border-t border-border pt-1.5">
+            <span>All-in</span>
+            <span>{money(basket.allIn)}</span>
+          </div>
+        )}
+        {!basket.complete && (
+          <p className="text-[11px] text-text-muted">
+            Incomplete — missing price(s)
+          </p>
+        )}
       </div>
 
-      {threshold === undefined ? (
+      {basket.thresholdUnset ? (
         <button
           onClick={onEdit}
           className="text-[11px] text-text-muted hover:text-primary"
         >
           Free-shipping threshold not set — add one
         </button>
-      ) : gap !== null && gap > 0 ? (
+      ) : basket.gapToFreeShipping !== null && basket.gapToFreeShipping > 0 ? (
         <div>
           <p className="text-[11px] text-low font-semibold">
-            {money(gap)} away from free shipping ({money(threshold)})
+            {money(basket.gapToFreeShipping)} to free shipping (
+            {money(basket.freeShippingThreshold!)})
           </p>
           <div className="mt-1 h-1.5 bg-text/10 rounded-full overflow-hidden">
             <div
               className="h-full bg-low rounded-full"
               style={{
-                width: `${Math.min(100, (subtotal / threshold) * 100)}%`,
+                width: `${Math.min(
+                  100,
+                  (basket.subtotal / basket.freeShippingThreshold!) * 100
+                )}%`,
               }}
             />
           </div>
         </div>
-      ) : (
+      ) : basket.freeShippingMet ? (
         <p className="text-[11px] text-primary font-semibold">
-          ✓ Free shipping ({money(threshold)} threshold met)
+          ✓ Free shipping met ({money(basket.freeShippingThreshold!)})
         </p>
-      )}
+      ) : null}
 
       {missingPrices > 0 && (
         <p className="text-[11px] text-text-muted">
