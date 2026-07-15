@@ -215,7 +215,7 @@ export default defineSchema({
 
   // One line of the household's single active Restock Plan (ADR-0006 / ADR-0009).
   // Subject is what runs out — a solo supplement XOR a group. Exactly one
-  // candidate may be selected per item per cycle; entered price and planned
+  // candidate may be selected per item per cycle; candidate prices and planned
   // quantity live on this row. Session-scoped — purchased rows are history.
   restockItems: defineTable({
     householdId: v.id("households"),
@@ -223,7 +223,10 @@ export default defineSchema({
     groupId: v.optional(v.id("groups")), // …XOR group subject
     qty: v.number(), // planned bottles; pre-filled from the recommendation
     selectedCandidateId: v.optional(v.id("candidateProducts")),
-    enteredPrice: v.optional(v.number()), // cycle-scoped sticker for the selection
+    candidatePrices: v.optional(v.array(v.object({
+      candidateId: v.id("candidateProducts"),
+      price: v.number(),
+    }))),
     status: v.union(v.literal("active"), v.literal("purchased")),
     addedAt: v.number(),
     purchasedAt: v.optional(v.number()),

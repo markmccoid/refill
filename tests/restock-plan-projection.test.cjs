@@ -29,6 +29,7 @@ const {
   computeRetailerBasket,
   cheapestBasketRetailerIds,
 } = loadTsModule("lib/restock-basket-math.ts");
+const { lookupCandidatePrice } = loadTsModule("lib/candidate-price-utils.ts");
 
 /**
  * Mirrors server-side basket derivation in convex/restock.ts plan query.
@@ -56,7 +57,7 @@ function derivePlanBaskets(items, retailers) {
     const retailer = retailerById.get(retailerId);
     const lineInputs = group.map(({ item, candidate }) => ({
       qty: item.qty,
-      enteredPrice: item.enteredPrice,
+      enteredPrice: lookupCandidatePrice(item.candidatePrices, candidate.id),
       candidateCount: candidate.count,
     }));
     const built = buildBasketLines(lineInputs);
@@ -115,7 +116,7 @@ test("plan projection: two retailer baskets, one incomplete, cheapest on complet
       id: "item1",
       name: "Vitamin D",
       qty: 2,
-      enteredPrice: 12,
+      candidatePrices: [{ candidateId: "cand-amazon", price: 12 }],
       selectedCandidateId: "cand-amazon",
       candidates: [
         {
@@ -136,7 +137,7 @@ test("plan projection: two retailer baskets, one incomplete, cheapest on complet
       id: "item2",
       name: "Fish Oil",
       qty: 1,
-      enteredPrice: null, // incomplete — no sticker yet
+      candidatePrices: [], // incomplete — no sticker yet
       selectedCandidateId: "cand-amazon2",
       candidates: [
         {
@@ -151,7 +152,7 @@ test("plan projection: two retailer baskets, one incomplete, cheapest on complet
       id: "item3",
       name: "Magnesium",
       qty: 1,
-      enteredPrice: 18,
+      candidatePrices: [{ candidateId: "cand-iherb", price: 18 }],
       selectedCandidateId: "cand-iherb",
       candidates: [
         {
@@ -224,7 +225,7 @@ test("plan projection: subtotal uses shared math for multi-line complete basket"
       id: "a",
       name: "Zinc",
       qty: 2,
-      enteredPrice: 10,
+      candidatePrices: [{ candidateId: "c1", price: 10 }],
       selectedCandidateId: "c1",
       candidates: [{ id: "c1", retailerId: "vitacost", label: "Zinc A", count: 100 }],
     },
@@ -232,7 +233,7 @@ test("plan projection: subtotal uses shared math for multi-line complete basket"
       id: "b",
       name: "C",
       qty: 1,
-      enteredPrice: 15,
+      candidatePrices: [{ candidateId: "c2", price: 15 }],
       selectedCandidateId: "c2",
       candidates: [{ id: "c2", retailerId: "vitacost", label: "C Complex", count: 90 }],
     },

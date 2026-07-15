@@ -30,6 +30,11 @@ import {
   computeRetailerBasket,
 } from "../lib/restock-basket-math";
 import { validatePurchaseActuals } from "../lib/purchase-actuals-utils";
+import {
+  clearCandidatePrice,
+  lowestPricePerPillCandidateIds,
+  upsertCandidatePrice,
+} from "../lib/candidate-price-utils";
 
 // The Restock Planner backend (ADR-0006 / ADR-0009). One active plan per
 // household, user-curated only; retailer baskets are derived server-side from
@@ -205,6 +210,7 @@ const candidateSummary = v.object({
   url: v.string(),
   label: v.string(),
   count: v.union(v.number(), v.null()),
+  enteredPrice: v.union(v.number(), v.null()),
 });
 
 const basketLineValidator = v.object({
@@ -251,7 +257,7 @@ const planItemValidator = v.object({
   recommendedQty: v.number(),
   defaultJarSize: v.number(),
   selectedCandidateId: v.union(v.id("candidateProducts"), v.null()),
-  enteredPrice: v.union(v.number(), v.null()),
+  lowestPricePerPillCandidateIds: v.array(v.id("candidateProducts")),
   candidates: v.array(candidateSummary),
   purchaseDestinations: v.array(
     v.object({
@@ -334,7 +340,7 @@ export const picker = query({
           onPlan: item !== undefined,
           hasPlanWork:
             item !== undefined &&
-            (item.enteredPrice !== undefined ||
+            ((item.candidatePrices?.length ?? 0) > 0 ||
               item.selectedCandidateId !== undefined),
         };
       })
@@ -395,7 +401,7 @@ export const plan = query({
       recommendedQty: number;
       defaultJarSize: number;
       selectedCandidateId: Id<"candidateProducts"> | null;
-      enteredPrice: number | null;
+      lowestPricePerPillCandidateIds: Id<"candidateProducts">[];
       candidates: Array<{
         _id: Id<"candidateProducts">;
         retailerId: Id<"retailers">;
@@ -403,6 +409,7 @@ export const plan = query({
         url: string;
         label: string;
         count: number | null;
+        enteredPrice: number | null;
       }>;
       purchaseDestinations: Array<{
         supplementId: Id<"supplements">;
@@ -416,6 +423,7 @@ export const plan = query({
       {
         item: EnrichedItem;
         candidate: Doc<"candidateProducts">;
+        enteredPrice: number | null;
       }[]
     >();
 
@@ -424,6 +432,12 @@ export const plan = query({
       if (!subject) continue;
 
       const rawCandidates = await listCandidatesForItem(ctx, item);
+      const priceByCandidateId = new Map(
+        (item.candidatePrices ?? []).map(({ candidateId, price }) => [
+          candidateId,
+          price,
+        ])
+      );
       const candidates = rawCandidates.map((c) => ({
         _id: c._id,
         retailerId: c.retailerId,
@@ -431,6 +445,7 @@ export const plan = query({
         url: c.url,
         label: c.label,
         count: c.count ?? null,
+        enteredPrice: priceByCandidateId.get(c._id) ?? null,
       }));
 
       const selectedCandidate = item.selectedCandidateId
@@ -459,7 +474,13 @@ export const plan = query({
         ),
         defaultJarSize: bottleCount,
         selectedCandidateId: item.selectedCandidateId ?? null,
-        enteredPrice: item.enteredPrice ?? null,
+        lowestPricePerPillCandidateIds: lowestPricePerPillCandidateIds(
+          candidates.map((candidate) => ({
+            candidateId: candidate._id,
+            count: candidate.count,
+            price: candidate.enteredPrice,
+          }))
+        ),
         candidates,
         purchaseDestinations: subject.brands.map((brand) => ({
           supplementId: brand._id,
@@ -471,7 +492,11 @@ export const plan = query({
 
       if (selectedCandidate) {
         const lines = basketGroups.get(selectedCandidate.retailerId) ?? [];
-        lines.push({ item: planItem, candidate: selectedCandidate });
+        lines.push({
+          item: planItem,
+          candidate: selectedCandidate,
+          enteredPrice: priceByCandidateId.get(selectedCandidate._id) ?? null,
+        });
         basketGroups.set(selectedCandidate.retailerId, lines);
       }
     }
@@ -483,9 +508,9 @@ export const plan = query({
       const retailer = retailerById.get(retailerId);
       if (!retailer) continue;
 
-      const lineInputs = group.map(({ item, candidate }) => ({
+      const lineInputs = group.map(({ item, candidate, enteredPrice }) => ({
         qty: item.qty,
-        enteredPrice: item.enteredPrice,
+        enteredPrice,
         candidateCount: candidate.count ?? null,
       }));
 
@@ -629,20 +654,40 @@ export const setQty = mutation({
   },
 });
 
-/** Enter (or clear, with null) the cycle-scoped sticker price for the item. */
+/** Enter (or clear, with null) one candidate's cycle-scoped sticker price. */
 export const setPrice = mutation({
   args: {
     id: v.id("restockItems"),
+    candidateId: v.id("candidateProducts"),
     price: v.union(v.number(), v.null()),
   },
   returns: v.null(),
-  async handler(ctx, { id, price }) {
+  async handler(ctx, { id, candidateId, price }) {
     const item = await requireActiveItem(ctx, id);
-    if (price !== null && price >= 0 && Number.isFinite(price)) {
-      await ctx.db.patch(item._id, { enteredPrice: price });
-    } else {
-      await ctx.db.patch(item._id, { enteredPrice: undefined });
+    if (
+      price !== null &&
+      (!Number.isFinite(price) || price < 0 || price > 1_000_000)
+    ) {
+      throw new Error("Price must be between 0 and 1,000,000.");
     }
+    const candidate = await ctx.db.get(candidateId);
+    const valid =
+      candidate !== null &&
+      candidate.householdId === item.householdId &&
+      (item.groupId
+        ? candidate.groupId === item.groupId
+        : candidate.supplementId === item.supplementId);
+    if (!valid) {
+      throw new Error("That candidate doesn't fulfil this item.");
+    }
+
+    const patch = {
+      candidatePrices:
+        price !== null
+          ? upsertCandidatePrice(item.candidatePrices, candidateId, price)
+          : clearCandidatePrice(item.candidatePrices, candidateId),
+    };
+    await ctx.db.patch(item._id, patch);
     return null;
   },
 });
@@ -660,7 +705,9 @@ export const selectCandidate = mutation({
   async handler(ctx, { id, candidateId }) {
     const item = await requireActiveItem(ctx, id);
     if (candidateId === null) {
-      await ctx.db.patch(item._id, { selectedCandidateId: undefined });
+      await ctx.db.patch(item._id, {
+        selectedCandidateId: undefined,
+      });
       return null;
     }
     const candidate = await ctx.db.get(candidateId);
@@ -673,7 +720,9 @@ export const selectCandidate = mutation({
     if (!valid) {
       throw new Error("That candidate doesn't fulfil this item.");
     }
-    await ctx.db.patch(item._id, { selectedCandidateId: candidateId });
+    await ctx.db.patch(item._id, {
+      selectedCandidateId: candidateId,
+    });
     return null;
   },
 });
@@ -855,7 +904,11 @@ export const markPurchased = mutation({
         url
       );
 
-      await ctx.db.patch(item._id, { status: "purchased", purchasedAt });
+      await ctx.db.patch(item._id, {
+        status: "purchased",
+        purchasedAt,
+        candidatePrices: undefined,
+      });
     }
     return null;
   },

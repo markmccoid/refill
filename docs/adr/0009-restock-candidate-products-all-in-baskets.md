@@ -27,7 +27,7 @@ Design source: `.scratch/restock-redesign/` wayfinder map (issues 01–06). The 
 ### Restock Plan item
 
 - Subject is solo Supplement or whole Group — never an individual grouped brand.
-- Exactly **one selected candidate** per item per cycle; **entered price** and **planned qty** on the Restock item.
+- Exactly **one selected candidate** per item per cycle; **entered prices are keyed by candidate** and **planned qty** stays on the Restock item. Changing selection never transfers price.
 - Recommended qty uses selected candidate's count and coverage target (unchanged formula spirit from ADR-0006).
 
 ### Candidate capture UX
@@ -81,7 +81,7 @@ Retailer entity adds optional **standard shipping cost** (unset = unknown). No p
 ## Consequences
 
 - **Schema:** new candidate storage on subject; Restock items reference selected candidate (not supplement+retailer offer pair); Retailer gains standard shipping cost; Offer-related fields removed from restock items.
-- **Migration:** silent candidate seed from saved links + bottle URLs; existing plans may need offer→candidate mapping at cutover (implementation detail).
+- **Migration:** completed in production on 2026-07-15. Backfill scanned 3, backfilled 1, and skipped 2 with no selection issues; clear scanned 3, cleared 1, found 2 already clear, and reported `skippedNotBackfilled: 0`. The legacy scalar and temporary migration functions are now removed.
 - **ADR-0006 kept:** manual prices, no scraping, curated plan, Retailer entity, derived orders, session-scoped entered prices, two household knobs, per-bottle purchase logging, retailers not deletable in v1.
 - **ADR-0006 replaced:** Offer matrix, average price as $/pill fallback, implicit brand at purchase, threshold-gap-only totals (shipping fee now in all-in when configured).
 - **Out of scope (unchanged):** price scraping, retailer optimizer, tax modeling, subscribe-and-save modeling, rebuilding plan membership/urgency/coverage UX.

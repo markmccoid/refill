@@ -8,7 +8,7 @@ The governing decision is [ADR-0009](../../../docs/adr/0009-restock-candidate-pr
 
 ## Why this shape
 
-The former brand-by-retailer Offer matrix coupled shopping choices to brands already in inventory and grew combinatorially as either side expanded. Candidate Products instead belong to the solo supplement or group that needs restocking. Their URLs survive purchase cycles, while selection, quantity, and entered price remain cycle-scoped.
+The former brand-by-retailer Offer matrix coupled shopping choices to brands already in inventory and grew combinatorially as either side expanded. Candidate Products instead belong to the solo supplement or group that needs restocking. Their URLs survive purchase cycles, while selection, quantity, and candidate-keyed entered prices remain cycle-scoped.
 
 The feature supports decisions rather than optimizing them. Retailer assignment remains explicit, and soft cheapest-basket cues appear only when complete, comparable all-in totals exist. Tax, account-specific promotions, scraping, and automatic retailer assignment remain outside the model because the application cannot know them reliably.
 
@@ -17,7 +17,7 @@ Purchase completion deliberately does not infer a match from a candidate label. 
 ## Invariants
 
 - A Candidate Product belongs to exactly one restock subject and is unique by literal URL within that subject.
-- Candidate URLs and metadata are durable; selected candidate, entered sticker price, and planned quantity live on the active restock item.
+- Candidate URLs and metadata are durable; selected candidate, per-candidate sticker prices, and planned quantity live on the active restock item. Selection changes do not transfer prices.
 - Basket math has one owner in `lib/restock-basket-math.ts`. Shipping is included in all-in totals when applicable, but never allocated into per-pill price.
 - Incomplete or unknown-shipping baskets cannot receive a cheapest-all-in cue.
 - Existing purchase destinations stay inside the item's subject: the solo supplement itself or a member of the current group.
@@ -61,6 +61,8 @@ The temporary `/prototype/candidate-capture` and `/prototype/two-pane-restock` r
 
 ## Verification record
 
-On 2026-07-15, the full unit suite (50 tests), `npx tsc --noEmit`, and `npm run build` passed. Browser checks exercised the production `/restock` route with two items and two retailers, empty and valid purchase-dialog states, add-new controls, and a confirmed existing-destination purchase that removed only the purchased line from the active plan. A fresh screenshot critique's apparent right-edge clipping was checked against browser geometry: the 2381 px viewport had a 2366 px document width and no horizontal overflow; the review image had been downscaled for display. The final purchase-validation and server-derived group-destination hardening was then deployed successfully to production.
+On 2026-07-15, the full unit suite (57 tests), `npx tsc --noEmit`, and `npm run build` passed. Browser checks exercised two independently priced candidates, repeated switching, reload persistence, per-option $/pill and lowest-★ labels, selected basket totals, and purchase-dialog defaults. The earlier purchase flow checks covered empty and valid dialog states, add-new controls, and a confirmed existing-destination purchase that removed only the purchased line from the active plan. A fresh screenshot critique found no blocker for the focused per-candidate pricing behavior.
 
 Production Convex was cut over in two validated stages: the compatibility deployment seeded 16 candidates across 17 subjects and cleared legacy fields from 3 Restock rows, then the final deployment removed the legacy schema and migration surface.
+
+Per-candidate pricing completed its production cutover on 2026-07-15: backfill scanned 3, backfilled 1, and skipped 2 with no selection issues; clear scanned 3, cleared 1, found 2 already clear, and reported `skippedNotBackfilled: 0`. The final schema/functions deployment succeeded, and the repository now contains only candidate-keyed cycle pricing.

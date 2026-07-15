@@ -13,6 +13,10 @@ import {
   normalizeCandidateUrl,
   validateSubjectXor,
 } from "../lib/candidate-product-utils";
+import {
+  clearCandidatePrice,
+  remapAndMergeCandidatePrices,
+} from "../lib/candidate-price-utils";
 
 // Candidate products (ADR-0009): labeled purchase URLs at retailers for a solo
 // supplement XOR a group. Independent of Restock plan rows; URL dedupe is per
@@ -96,7 +100,7 @@ async function selectedCandidateIdsOnActivePlan(
   return ids;
 }
 
-async function clearActiveSelectionsOfCandidate(
+async function clearActiveCandidateState(
   ctx: MutationCtx,
   householdId: Id<"households">,
   candidateId: Id<"candidateProducts">
@@ -108,8 +112,21 @@ async function clearActiveSelectionsOfCandidate(
     )
     .collect();
   for (const item of active) {
-    if (item.selectedCandidateId === candidateId) {
-      await ctx.db.patch(item._id, { selectedCandidateId: undefined });
+    const selected = item.selectedCandidateId === candidateId;
+    const candidatePrices = clearCandidatePrice(
+      item.candidatePrices,
+      candidateId
+    );
+    if (
+      selected ||
+      candidatePrices.length !== (item.candidatePrices?.length ?? 0)
+    ) {
+      await ctx.db.patch(item._id, {
+        selectedCandidateId: selected
+          ? undefined
+          : item.selectedCandidateId,
+        candidatePrices,
+      });
     }
   }
 }
@@ -143,7 +160,22 @@ export async function deleteSupplementSubjectLifecycle(
       item.selectedCandidateId &&
       candidateIds.has(item.selectedCandidateId)
     ) {
-      await ctx.db.patch(item._id, { selectedCandidateId: undefined });
+      await ctx.db.patch(item._id, {
+        selectedCandidateId: undefined,
+        candidatePrices: item.candidatePrices?.filter(
+          (entry) => !candidateIds.has(entry.candidateId)
+        ),
+      });
+    } else if (
+      item.candidatePrices?.some((entry) =>
+        candidateIds.has(entry.candidateId)
+      )
+    ) {
+      await ctx.db.patch(item._id, {
+        candidatePrices: item.candidatePrices.filter(
+          (entry) => !candidateIds.has(entry.candidateId)
+        ),
+      });
     }
   }
   for (const candidate of candidates) await ctx.db.delete(candidate._id);
@@ -153,7 +185,7 @@ export async function deleteSupplementSubjectLifecycle(
  * Fold solo candidates and active Restock cycles into a Group. Existing Group
  * candidates win URL duplicates, followed by supplement input order. On join,
  * the existing Group cycle wins; on formation, the earliest solo cycle wins.
- * Other rows lose their cycle-scoped qty/selection/price state.
+ * Other rows lose qty/selection, while candidate prices merge deterministically.
  */
 export async function migrateSupplementsToGroupLifecycle(
   ctx: MutationCtx,
@@ -219,13 +251,33 @@ export async function migrateSupplementsToGroupLifecycle(
         ? retainedItem.selectedCandidateId
         : undefined))
     : undefined;
+  const remapCandidateId = (candidateId: Id<"candidateProducts">) =>
+    remappedCandidateIds.get(candidateId) ??
+    (retainedCandidateIds.has(candidateId) ? candidateId : undefined);
+  let candidatePrices = remapAndMergeCandidatePrices(
+    [],
+    retainedItem.candidatePrices,
+    retainedItem.selectedCandidateId,
+    remapCandidateId
+  );
+  for (const sourceItem of relevantItems
+    .filter((item) => item._id !== retainedItem._id)
+    .sort(
+      (a, b) =>
+        a.addedAt - b.addedAt || String(a._id).localeCompare(String(b._id))
+    )) {
+    candidatePrices = remapAndMergeCandidatePrices(
+      candidatePrices,
+      sourceItem.candidatePrices,
+      sourceItem.selectedCandidateId,
+      remapCandidateId
+    );
+  }
   await ctx.db.patch(retainedItem._id, {
     supplementId: undefined,
     groupId,
     selectedCandidateId,
-    enteredPrice: selectedCandidateId
-      ? retainedItem.enteredPrice
-      : undefined,
+    candidatePrices,
   });
 }
 
@@ -265,16 +317,27 @@ export async function migrateGroupSubjectLifecycle(
   }
 
   const activeItems = await activeItemsForHousehold(ctx, householdId);
+  const retainedCandidateIds = new Set(
+    retained.map((candidate) => candidate._id)
+  );
   for (const item of activeItems) {
     if (item.groupId !== groupId) continue;
     const selectedCandidateId = item.selectedCandidateId
       ? remappedCandidateIds.get(item.selectedCandidateId)
       : undefined;
+    const candidatePrices = remapAndMergeCandidatePrices(
+      [],
+      item.candidatePrices,
+      item.selectedCandidateId,
+      (candidateId) =>
+        remappedCandidateIds.get(candidateId) ??
+        (retainedCandidateIds.has(candidateId) ? candidateId : undefined)
+    );
     await ctx.db.patch(item._id, {
       supplementId,
       groupId: undefined,
       selectedCandidateId,
-      enteredPrice: selectedCandidateId ? item.enteredPrice : undefined,
+      candidatePrices,
     });
   }
 }
@@ -296,7 +359,22 @@ export async function deleteGroupSubjectLifecycle(
       item.selectedCandidateId &&
       candidateIds.has(item.selectedCandidateId)
     ) {
-      await ctx.db.patch(item._id, { selectedCandidateId: undefined });
+      await ctx.db.patch(item._id, {
+        selectedCandidateId: undefined,
+        candidatePrices: item.candidatePrices?.filter(
+          (entry) => !candidateIds.has(entry.candidateId)
+        ),
+      });
+    } else if (
+      item.candidatePrices?.some((entry) =>
+        candidateIds.has(entry.candidateId)
+      )
+    ) {
+      await ctx.db.patch(item._id, {
+        candidatePrices: item.candidatePrices.filter(
+          (entry) => !candidateIds.has(entry.candidateId)
+        ),
+      });
     }
   }
   for (const candidate of candidates) await ctx.db.delete(candidate._id);
@@ -434,7 +512,7 @@ export const remove = mutation({
     await requireMembership(ctx, candidate.householdId);
     // ADR-0009: deleting a candidate selected on an active plan item clears
     // that selection (UI confirms first when selectedOnActivePlan).
-    await clearActiveSelectionsOfCandidate(
+    await clearActiveCandidateState(
       ctx,
       candidate.householdId,
       id

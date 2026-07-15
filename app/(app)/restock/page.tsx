@@ -143,7 +143,9 @@ export default function RestockPage() {
                 onAddRetailer={() => setRetailerDialog({ retailer: null })}
                 onRemove={() => {
                   const hasWork =
-                    item.enteredPrice !== null ||
+                    item.candidates.some(
+                      (candidate) => candidate.enteredPrice !== null
+                    ) ||
                     item.selectedCandidateId !== null;
                   if (
                     !hasWork ||
@@ -273,7 +275,15 @@ function ItemCard({
   const isGroup = item.subjectKind === "group";
   const selected =
     item.candidates.find((c) => c._id === item.selectedCandidateId) ?? null;
+  const selectedPrice = selected?.enteredPrice ?? null;
   const selectedAccent = selected ? retailerAccent(selected.retailerId) : null;
+  const retailerCandidateCounts = new Map<string, number>();
+  for (const candidate of item.candidates) {
+    retailerCandidateCounts.set(
+      candidate.retailerId,
+      (retailerCandidateCounts.get(candidate.retailerId) ?? 0) + 1
+    );
+  }
   const subjectId = (item.groupId ?? item.supplementId) as
     | Id<"supplements">
     | Id<"groups">;
@@ -390,29 +400,41 @@ function ItemCard({
               >
                 Check Site ↗
               </a>
-              <input
-                key={`${item._id}-${item.enteredPrice}`}
-                type="number"
-                min={0}
-                step={0.01}
-                placeholder="Price"
-                defaultValue={item.enteredPrice ?? ""}
-                onBlur={(e) => {
-                  const raw = e.target.value.trim();
-                  const v = raw === "" ? null : parseFloat(raw);
-                  const next =
-                    v !== null && Number.isFinite(v) && v >= 0 ? v : null;
-                  if (next !== item.enteredPrice) {
-                    setPrice({ id: item._id, price: next });
-                  }
-                }}
-                className="w-20 px-2 py-1 text-sm border border-border-strong rounded-md bg-surface text-right"
-              />
+              <label className="flex items-center gap-1">
+                <span className="sr-only">
+                  Price for {selected.label} at {selected.retailerName}
+                </span>
+                <span aria-hidden="true" className="text-xs text-text-muted">
+                  $
+                </span>
+                <input
+                  key={`${item._id}-${selected._id}`}
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  placeholder="Price"
+                  defaultValue={selectedPrice ?? ""}
+                  onBlur={(e) => {
+                    const raw = e.target.value.trim();
+                    const v = raw === "" ? null : parseFloat(raw);
+                    const next =
+                      v !== null && Number.isFinite(v) && v >= 0 ? v : null;
+                    if (next !== selectedPrice) {
+                      setPrice({
+                        id: item._id,
+                        candidateId: selected._id,
+                        price: next,
+                      });
+                    }
+                  }}
+                  className="w-20 px-2 py-1 text-sm border border-border-strong rounded-md bg-surface text-right"
+                />
+              </label>
               {selected.count !== null &&
                 selected.count > 0 &&
-                item.enteredPrice !== null && (
+                selectedPrice !== null && (
                   <span className="text-xs font-semibold whitespace-nowrap">
-                    {perPill(item.enteredPrice / selected.count)}/pill
+                    {perPill(selectedPrice / selected.count)}/pill
                   </span>
                 )}
             </div>
@@ -425,10 +447,11 @@ function ItemCard({
           <div className="flex flex-wrap items-center gap-1.5">
             {item.candidates.map((c) => {
               const isSelected = item.selectedCandidateId === c._id;
+              const isLowest =
+                item.lowestPricePerPillCandidateIds.includes(c._id);
               const accent = retailerAccent(c.retailerId);
               const showChipPerPill =
-                isSelected &&
-                item.enteredPrice !== null &&
+                c.enteredPrice !== null &&
                 c.count !== null &&
                 c.count > 0;
               return (
@@ -444,13 +467,25 @@ function ItemCard({
                   className={`text-[11px] px-2.5 py-1 rounded-full border transition-colors ${
                     isSelected
                       ? accent.chipSelected
-                      : "border-border text-text-muted hover:border-text-muted"
+                      : "border-border-strong text-text hover:border-primary/50 hover:bg-surface-alt"
                   }`}
                 >
                   {c.retailerName}
-                  {showChipPerPill
-                    ? ` · ${perPill(item.enteredPrice! / c.count!)}`
+                  {(retailerCandidateCounts.get(c.retailerId) ?? 0) > 1
+                    ? ` · ${c.label}`
                     : ""}
+                  {showChipPerPill
+                    ? ` · ${perPill(c.enteredPrice! / c.count!)}`
+                    : ""}
+                  {isLowest && (
+                    <span
+                      className="ml-1 text-primary"
+                      title="Lowest $/pill among priced options"
+                      aria-label="Lowest price per pill among priced options"
+                    >
+                      ★
+                    </span>
+                  )}
                 </button>
               );
             })}
