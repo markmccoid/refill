@@ -28,6 +28,7 @@ const {
   validateSubjectXor,
   normalizeCandidateUrl,
   hasDuplicateUrl,
+  findMigrationDuplicateId,
 } = loadTsModule("lib/candidate-product-utils.ts");
 
 // --- validateSubjectXor ---
@@ -100,4 +101,35 @@ test("hasDuplicateUrl excludes self when updating", () => {
 test("hasDuplicateUrl ignores empty trimmed URL", () => {
   const candidates = [{ _id: "c1", url: "https://a.com/x" }];
   assert.equal(hasDuplicateUrl(candidates, "   "), false);
+});
+
+// --- findMigrationDuplicateId ---
+
+test("findMigrationDuplicateId dedupes by trimmed URL", () => {
+  const retained = [
+    { _id: "c1", retailerId: "r1", url: "https://a.com/x" },
+    { _id: "c2", retailerId: "r2", url: " https://b.com/y " },
+  ];
+
+  assert.equal(
+    findMigrationDuplicateId(retained, {
+      retailerId: "r2",
+      url: "https://b.com/y",
+    }),
+    "c2"
+  );
+});
+
+test("findMigrationDuplicateId dedupes same URL at another retailer", () => {
+  const retained = [
+    { _id: "c1", retailerId: "r1", url: "https://a.com/x" },
+  ];
+
+  assert.equal(
+    findMigrationDuplicateId(retained, {
+      retailerId: "r2",
+      url: "https://a.com/x",
+    }),
+    "c1"
+  );
 });

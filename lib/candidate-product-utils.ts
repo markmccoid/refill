@@ -27,6 +27,11 @@ export function normalizeCandidateUrl(url: string): string {
 
 export type UrlComparable = { _id?: string; url: string };
 
+export type MigrationComparable = {
+  _id: string;
+  url: string;
+};
+
 /** True when another row on the subject already has the same trimmed URL. */
 export function hasDuplicateUrl(
   candidates: UrlComparable[],
@@ -40,4 +45,16 @@ export function hasDuplicateUrl(
       normalizeCandidateUrl(candidate.url) === normalized &&
       candidate._id !== excludeId
   );
+}
+
+/** Find the retained candidate for a Group migration duplicate. */
+export function findMigrationDuplicateId(
+  retained: MigrationComparable[],
+  incoming: Pick<MigrationComparable, "url">
+): string | undefined {
+  const normalized = normalizeCandidateUrl(incoming.url);
+  return retained.find(
+    (candidate) =>
+      normalizeCandidateUrl(candidate.url) === normalized
+  )?._id;
 }

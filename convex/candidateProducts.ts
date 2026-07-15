@@ -8,6 +8,7 @@ import {
   requireSupplementAccess,
 } from "./authz";
 import {
+  findMigrationDuplicateId,
   hasDuplicateUrl,
   normalizeCandidateUrl,
   validateSubjectXor,
@@ -16,11 +17,6 @@ import {
 // Candidate products (ADR-0009): labeled purchase URLs at retailers for a solo
 // supplement XOR a group. Independent of Restock plan rows; URL dedupe is per
 // subject (literal trim match).
-//
-// Lifecycle (wire in later slices — do not implement here):
-// - Delete all candidates when the subject (supplement or group) is deleted
-// - On Group auto-dissolve → migrate candidates to the surviving supplement, dedupe URL
-// - On full Group teardown → delete group candidates with the group
 
 const candidateDoc = v.object({
   _id: v.id("candidateProducts"),
@@ -116,6 +112,194 @@ async function clearActiveSelectionsOfCandidate(
       await ctx.db.patch(item._id, { selectedCandidateId: undefined });
     }
   }
+}
+
+async function activeItemsForHousehold(
+  ctx: MutationCtx,
+  householdId: Id<"households">
+) {
+  return await ctx.db
+    .query("restockItems")
+    .withIndex("by_household_status", (q) =>
+      q.eq("householdId", householdId).eq("status", "active")
+    )
+    .collect();
+}
+
+/** Delete all durable and active-plan state owned by a solo subject. */
+export async function deleteSupplementSubjectLifecycle(
+  ctx: MutationCtx,
+  householdId: Id<"households">,
+  supplementId: Id<"supplements">
+): Promise<void> {
+  const candidates = await listForSubject(ctx, { supplementId });
+  const candidateIds = new Set(candidates.map((candidate) => candidate._id));
+  const activeItems = await activeItemsForHousehold(ctx, householdId);
+
+  for (const item of activeItems) {
+    if (item.supplementId === supplementId) {
+      await ctx.db.delete(item._id);
+    } else if (
+      item.selectedCandidateId &&
+      candidateIds.has(item.selectedCandidateId)
+    ) {
+      await ctx.db.patch(item._id, { selectedCandidateId: undefined });
+    }
+  }
+  for (const candidate of candidates) await ctx.db.delete(candidate._id);
+}
+
+/**
+ * Fold solo candidates and active Restock cycles into a Group. Existing Group
+ * candidates win URL duplicates, followed by supplement input order. On join,
+ * the existing Group cycle wins; on formation, the earliest solo cycle wins.
+ * Other rows lose their cycle-scoped qty/selection/price state.
+ */
+export async function migrateSupplementsToGroupLifecycle(
+  ctx: MutationCtx,
+  householdId: Id<"households">,
+  supplementIds: Id<"supplements">[],
+  groupId: Id<"groups">
+): Promise<void> {
+  const retainedCandidates = await listForSubject(ctx, { groupId });
+  const remappedCandidateIds = new Map<
+    Id<"candidateProducts">,
+    Id<"candidateProducts">
+  >();
+
+  for (const supplementId of supplementIds) {
+    const supplementCandidates = await listForSubject(ctx, { supplementId });
+    for (const candidate of supplementCandidates) {
+      const duplicateId = findMigrationDuplicateId(
+        retainedCandidates,
+        candidate
+      ) as Id<"candidateProducts"> | undefined;
+      if (duplicateId) {
+        remappedCandidateIds.set(candidate._id, duplicateId);
+        await ctx.db.delete(candidate._id);
+        continue;
+      }
+
+      await ctx.db.patch(candidate._id, {
+        supplementId: undefined,
+        groupId,
+      });
+      remappedCandidateIds.set(candidate._id, candidate._id);
+      retainedCandidates.push({
+        ...candidate,
+        supplementId: undefined,
+        groupId,
+      });
+    }
+  }
+
+  const sourceIds = new Set<Id<"supplements">>(supplementIds);
+  const activeItems = await activeItemsForHousehold(ctx, householdId);
+  const groupItems = activeItems.filter((item) => item.groupId === groupId);
+  const soloItems = activeItems.filter(
+    (item) => item.supplementId && sourceIds.has(item.supplementId)
+  );
+  const relevantItems = [...groupItems, ...soloItems];
+  const retainedItem = [...(groupItems.length > 0 ? groupItems : soloItems)].sort(
+    (a, b) =>
+      a.addedAt - b.addedAt || String(a._id).localeCompare(String(b._id))
+  )[0];
+
+  for (const item of relevantItems) {
+    if (item._id !== retainedItem?._id) await ctx.db.delete(item._id);
+  }
+  if (!retainedItem) return;
+
+  const retainedCandidateIds = new Set(
+    retainedCandidates.map((candidate) => candidate._id)
+  );
+  const selectedCandidateId = retainedItem.selectedCandidateId
+    ? (remappedCandidateIds.get(retainedItem.selectedCandidateId) ??
+      (retainedCandidateIds.has(retainedItem.selectedCandidateId)
+        ? retainedItem.selectedCandidateId
+        : undefined))
+    : undefined;
+  await ctx.db.patch(retainedItem._id, {
+    supplementId: undefined,
+    groupId,
+    selectedCandidateId,
+    enteredPrice: selectedCandidateId
+      ? retainedItem.enteredPrice
+      : undefined,
+  });
+}
+
+/**
+ * Move a dissolving Group's candidates and active item to its surviving solo
+ * supplement. Existing supplement candidates win URL duplicates.
+ */
+export async function migrateGroupSubjectLifecycle(
+  ctx: MutationCtx,
+  householdId: Id<"households">,
+  groupId: Id<"groups">,
+  supplementId: Id<"supplements">
+): Promise<void> {
+  const retained = await listForSubject(ctx, { supplementId });
+  const groupCandidates = await listForSubject(ctx, { groupId });
+  const remappedCandidateIds = new Map<
+    Id<"candidateProducts">,
+    Id<"candidateProducts">
+  >();
+
+  for (const candidate of groupCandidates) {
+    const duplicateId = findMigrationDuplicateId(retained, candidate) as
+      | Id<"candidateProducts">
+      | undefined;
+    if (duplicateId) {
+      remappedCandidateIds.set(candidate._id, duplicateId);
+      await ctx.db.delete(candidate._id);
+      continue;
+    }
+
+    await ctx.db.patch(candidate._id, {
+      supplementId,
+      groupId: undefined,
+    });
+    remappedCandidateIds.set(candidate._id, candidate._id);
+    retained.push({ ...candidate, supplementId, groupId: undefined });
+  }
+
+  const activeItems = await activeItemsForHousehold(ctx, householdId);
+  for (const item of activeItems) {
+    if (item.groupId !== groupId) continue;
+    const selectedCandidateId = item.selectedCandidateId
+      ? remappedCandidateIds.get(item.selectedCandidateId)
+      : undefined;
+    await ctx.db.patch(item._id, {
+      supplementId,
+      groupId: undefined,
+      selectedCandidateId,
+      enteredPrice: selectedCandidateId ? item.enteredPrice : undefined,
+    });
+  }
+}
+
+/** Delete all durable and active-plan state owned by a torn-down Group. */
+export async function deleteGroupSubjectLifecycle(
+  ctx: MutationCtx,
+  householdId: Id<"households">,
+  groupId: Id<"groups">
+): Promise<void> {
+  const candidates = await listForSubject(ctx, { groupId });
+  const candidateIds = new Set(candidates.map((candidate) => candidate._id));
+  const activeItems = await activeItemsForHousehold(ctx, householdId);
+
+  for (const item of activeItems) {
+    if (item.groupId === groupId) {
+      await ctx.db.delete(item._id);
+    } else if (
+      item.selectedCandidateId &&
+      candidateIds.has(item.selectedCandidateId)
+    ) {
+      await ctx.db.patch(item._id, { selectedCandidateId: undefined });
+    }
+  }
+  for (const candidate of candidates) await ctx.db.delete(candidate._id);
 }
 
 export const listBySubject = query({

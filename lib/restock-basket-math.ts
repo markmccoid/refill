@@ -36,12 +36,6 @@ export type RetailerBasketResult = {
   thresholdUnset: boolean;
 };
 
-export type CandidatePriceInput = {
-  candidateId: string;
-  enteredPrice: number | null;
-  count: number | null;
-};
-
 export type BasketForNudge = {
   retailerId: string;
   complete: boolean;
@@ -126,33 +120,6 @@ export function computeRetailerBasket(
     freeShippingMet,
     thresholdUnset,
   };
-}
-
-/**
- * Lowest $/pill among candidates that have both entered price and count.
- * Returns empty when fewer than 2 qualify; ties return all tied ids.
- */
-export function lowestPerPillCandidateIds(
-  candidates: CandidatePriceInput[]
-): string[] {
-  const priced = candidates
-    .map((c) => {
-      if (
-        c.enteredPrice === null ||
-        !Number.isFinite(c.enteredPrice) ||
-        c.count === null ||
-        c.count <= 0
-      ) {
-        return null;
-      }
-      return { id: c.candidateId, perPill: c.enteredPrice / c.count };
-    })
-    .filter(Boolean) as { id: string; perPill: number }[];
-
-  if (priced.length < 2) return [];
-
-  const min = Math.min(...priced.map((p) => p.perPill));
-  return priced.filter((p) => p.perPill === min).map((p) => p.id);
 }
 
 /**

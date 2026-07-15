@@ -2,9 +2,15 @@ import { internalQuery, mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { getConsumptionRate } from "../lib/supplement-utils";
 import { getActiveDosages, getPersonActiveDosages } from "./consumption";
-import { requireMembership, requireSupplementAccess } from "./authz";
+import {
+  requireGroupAccess,
+  requireMembership,
+  requireSupplementAccess,
+} from "./authz";
 import { linkPurchaseUrl } from "./retailers";
 import { bottleDoc } from "./bottles";
+import { deleteSupplementSubjectLifecycle } from "./candidateProducts";
+import { detachSupplementFromGroup } from "./groups";
 
 const nutrientsValidator = v.array(
   v.object({
@@ -202,7 +208,16 @@ export const remove = mutation({
   args: { id: v.id("supplements") },
   returns: v.null(),
   async handler(ctx, { id }) {
-    await requireSupplementAccess(ctx, id);
+    const supplement = await requireSupplementAccess(ctx, id);
+    if (supplement.groupId) {
+      const group = await requireGroupAccess(ctx, supplement.groupId);
+      await detachSupplementFromGroup(ctx, supplement._id, group);
+    }
+    await deleteSupplementSubjectLifecycle(
+      ctx,
+      supplement.householdId,
+      supplement._id
+    );
     // Cascade: DSLD facts (+ stored assets) and dosages.
     const facts = await ctx.db
       .query("supplementFacts")

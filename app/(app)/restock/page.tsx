@@ -57,16 +57,20 @@ export default function RestockPage() {
           return {
             itemId: line.itemId,
             itemName: line.itemName,
-            brandName: line.candidateLabel,
+            candidateLabel: line.candidateLabel,
+            subject:
+              planItem?.subjectKind === "group" && planItem.groupId
+                ? { kind: "group" as const, groupId: planItem.groupId }
+                : {
+                    kind: "supplement" as const,
+                    supplementId: planItem!.supplementId!,
+                  },
+            purchaseDestinations: planItem?.purchaseDestinations ?? [],
             defaultQty: line.qty,
             defaultPrice: line.unitPrice,
             defaultCount:
               planItem?.candidates.find((c) => c._id === line.candidateId)
-                ?.count ?? 1,
-            destination: {
-              kind: "existing" as const,
-              supplementId: planItem!.defaultDestinationSupplementId,
-            },
+                ?.count ?? null,
           };
         }
       )
@@ -270,7 +274,6 @@ function ItemCard({
   const selected =
     item.candidates.find((c) => c._id === item.selectedCandidateId) ?? null;
   const selectedAccent = selected ? retailerAccent(selected.retailerId) : null;
-  const lowestIds = new Set(item.lowestPerPillCandidateIds);
   const subjectId = (item.groupId ?? item.supplementId) as
     | Id<"supplements">
     | Id<"groups">;
@@ -448,14 +451,6 @@ function ItemCard({
                   {showChipPerPill
                     ? ` · ${perPill(item.enteredPrice! / c.count!)}`
                     : ""}
-                  {lowestIds.has(c._id) && (
-                    <span
-                      className="ml-1 text-primary"
-                      title="Lowest $/pill among priced options"
-                    >
-                      ★
-                    </span>
-                  )}
                 </button>
               );
             })}

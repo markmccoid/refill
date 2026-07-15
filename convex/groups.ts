@@ -13,6 +13,11 @@ import {
   requireGroupAccess,
   requireSupplementAccess,
 } from "./authz";
+import {
+  deleteGroupSubjectLifecycle,
+  migrateGroupSubjectLifecycle,
+  migrateSupplementsToGroupLifecycle,
+} from "./candidateProducts";
 
 /**
  * Assemble a group's client view: its member brands, each brand's bottles, the
@@ -158,6 +163,12 @@ export async function createGroupFromSupplements(
     await ctx.db.patch(id, { groupId, anchoredAt: now });
     await setMemberDosages(ctx, id, dosages);
   }
+  await migrateSupplementsToGroupLifecycle(
+    ctx,
+    householdId,
+    supplementIds,
+    groupId
+  );
   return groupId;
 }
 
@@ -169,6 +180,14 @@ export async function addSupplementToGroup(
 ) {
   const group = await ctx.db.get(groupId);
   if (!group) throw new Error("Group not found.");
+  const supplement = await ctx.db.get(supplementId);
+  if (!supplement) throw new Error("Supplement not found.");
+  if (supplement.householdId !== group.householdId) {
+    throw new Error("Supplement and Group must belong to the same household.");
+  }
+  if (supplement.groupId && supplement.groupId !== groupId) {
+    throw new Error("Supplement already belongs to another Group.");
+  }
 
   await reanchorGroup(ctx, groupId);
   await reanchorSupplement(ctx, supplementId);
@@ -182,6 +201,12 @@ export async function addSupplementToGroup(
   await ctx.db.patch(supplementId, { groupId, anchoredAt: now });
   await setMemberDosages(ctx, supplementId, template);
   await ctx.db.patch(groupId, { anchoredAt: now });
+  await migrateSupplementsToGroupLifecycle(
+    ctx,
+    group.householdId,
+    [supplementId],
+    groupId
+  );
 }
 
 /**
@@ -231,6 +256,42 @@ export const addMember = mutation({
 });
 
 /**
+ * Shared transactional detach body. Callers must authorize both the supplement
+ * and Group before invoking it.
+ */
+export async function detachSupplementFromGroup(
+  ctx: MutationCtx,
+  supplementId: Id<"supplements">,
+  group: Doc<"groups">
+): Promise<void> {
+  await reanchorGroup(ctx, group._id);
+  const now = Date.now();
+  await ctx.db.patch(supplementId, {
+    groupId: undefined,
+    anchoredAt: now,
+  });
+
+  const remaining = await groupMembers(ctx, group._id);
+  if (remaining.length === 1) {
+    const survivor = remaining[0];
+    await ctx.db.patch(survivor._id, {
+      groupId: undefined,
+      anchoredAt: now,
+    });
+    await migrateGroupSubjectLifecycle(
+      ctx,
+      group.householdId,
+      group._id,
+      survivor._id
+    );
+    await ctx.db.delete(group._id);
+  } else if (remaining.length === 0) {
+    await deleteGroupSubjectLifecycle(ctx, group.householdId, group._id);
+    await ctx.db.delete(group._id);
+  }
+}
+
+/**
  * Unlink a brand from its group. Freezes the whole group to now first (so the
  * departing member keeps its correct frozen remaining), then detaches it. If the
  * group is left with fewer than two members it auto-dissolves — the last member
@@ -238,22 +299,15 @@ export const addMember = mutation({
  */
 export const removeMember = mutation({
   args: { supplementId: v.id("supplements") },
+  returns: v.null(),
   async handler(ctx, { supplementId }) {
     const supplement = await requireSupplementAccess(ctx, supplementId);
-    if (!supplement || !supplement.groupId) return;
+    if (!supplement.groupId) return null;
     const groupId = supplement.groupId;
+    const group = await requireGroupAccess(ctx, groupId);
 
-    await reanchorGroup(ctx, groupId);
-    const now = Date.now();
-    await ctx.db.patch(supplementId, { groupId: undefined, anchoredAt: now });
-
-    const remaining = await groupMembers(ctx, groupId);
-    if (remaining.length < 2) {
-      for (const m of remaining) {
-        await ctx.db.patch(m._id, { groupId: undefined, anchoredAt: now });
-      }
-      await ctx.db.delete(groupId);
-    }
+    await detachSupplementFromGroup(ctx, supplementId, group);
+    return null;
   },
 });
 

@@ -224,19 +224,6 @@ export default defineSchema({
     qty: v.number(), // planned bottles; pre-filled from the recommendation
     selectedCandidateId: v.optional(v.id("candidateProducts")),
     enteredPrice: v.optional(v.number()), // cycle-scoped sticker for the selection
-    // Legacy Offer fields — kept optional so existing docs validate until
-    // migrations:migrateRestockItemsToCandidates strips them. Remove after cutover.
-    selectedSupplementId: v.optional(v.id("supplements")),
-    selectedRetailerId: v.optional(v.id("retailers")),
-    enteredPrices: v.optional(
-      v.array(
-        v.object({
-          supplementId: v.id("supplements"),
-          retailerId: v.id("retailers"),
-          price: v.number(),
-        })
-      )
-    ),
     status: v.union(v.literal("active"), v.literal("purchased")),
     addedAt: v.number(),
     purchasedAt: v.optional(v.number()),

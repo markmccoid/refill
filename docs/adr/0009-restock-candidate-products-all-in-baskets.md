@@ -4,7 +4,7 @@ ADR-0006 shipped the Restock Planner with a **brand×retailer Offer matrix** per
 
 This ADR records the redesign that **supersedes ADR-0006** wherever the two conflict. It keeps ADR-0006's foundations — manual entered prices, user-curated plan membership, first-class Retailer entity, derived retailer orders, session-scoped prices, forecast window + coverage target knobs, no scraping — and replaces the Offer model with **Candidate Products**, **all-in basket totals**, and **match-or-add** purchase completion. Domain terms live in `CONTEXT.md`; this ADR is the implementation-facing contract.
 
-Design source: `.scratch/restock-redesign/` wayfinder map (issues 01–06). UI prototypes: `/prototype/candidate-capture`, `/prototype/two-pane-restock`.
+Design source: `.scratch/restock-redesign/` wayfinder map (issues 01–06). The closed implementation record and retained visual provenance live in `specs/done/restock-redesign/`.
 
 ## Considered Options
 
@@ -21,7 +21,7 @@ Design source: `.scratch/restock-redesign/` wayfinder map (issues 01–06). UI p
 - Fields: **Retailer**, **URL**, **label** (required), **count** (optional for save/select; required for $/pill nudges).
 - Many per subject; substitutes and never-yet-stocked brands allowed.
 - One candidate per literal URL per subject; edit in place to update.
-- Lifecycle: deleted with subject; survive Restock item removal; migrate to survivor on Group auto-dissolve (dedupe); deleted on full Group teardown.
+- Lifecycle: deleted with subject; survive Restock item removal; migrate into a Group when subjects form/join it; migrate to the survivor on Group auto-dissolve; URL-dedupe on either migration; deleted on full Group teardown.
 - **Saved purchase link** remains a distinct per-(Supplement, Retailer) entity and may seed candidates (see Seeding).
 
 ### Restock Plan item
@@ -43,7 +43,7 @@ Design source: `.scratch/restock-redesign/` wayfinder map (issues 01–06). UI p
 - **Right (1/3, sticky):** one **retailer basket** card per retailer with selected lines.
 - **Per-retailer color accent** (stable household-wide): basket left border, selected chip, and selected row share the same hue.
 - Basket card: line list, subtotal, shipping row, **all-in**, gap / free-shipping met, cheapest-all-in badge (complete + shipping-known only), **Mark as Purchased**.
-- Soft nudges only: lowest $/pill per item (≥2 priced candidates with count), cheapest all-in basket, gap/met per retailer. Optional cheapest-all-in banner above grid when ≥2 eligible baskets.
+- Soft nudges only: cheapest all-in basket and gap/met per retailer. Optional cheapest-all-in banner above grid when ≥2 eligible baskets.
 - Plan membership picker, forecast window, and coverage target knobs unchanged from ADR-0006.
 
 ### All-in basket math

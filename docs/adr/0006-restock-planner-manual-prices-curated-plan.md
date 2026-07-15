@@ -1,5 +1,7 @@
 # Restock Planner: manual prices, user-curated plan, first-class Retailer
 
+> Superseded by [ADR-0009](0009-restock-candidate-products-all-in-baskets.md) where candidate products, all-in basket totals, and match-or-add purchasing conflict with this decision.
+
 The Restock Planner (replacing the placeholder Buy page) turns run-out forecasts into retailer purchases: a single persisted **Restock Plan** per household whose items carry manually entered prices, a selected **Offer** (brand + Retailer chosen together — a Group item is fulfilled by one member brand), and a planned quantity; a derived **Retailer order** view groups selections with free-shipping-threshold status; **Mark as Purchased** (per retailer order, with an actuals-confirmation step) lands each unit as an individual bottle row through the existing `bottles.add` re-anchor path. Three deliberate reversals of the previously documented direction are recorded here because a future reader will find the old plan (`FUTURE_FEATURES.md`'s scraping-based price finder) and wonder why the shipped feature does the opposite.
 
 ## Considered Options

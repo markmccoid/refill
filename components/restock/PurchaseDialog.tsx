@@ -11,22 +11,29 @@ export type PurchaseDestination =
       kind: "new";
       name: string;
       formGroupWithSubjectId?: Id<"supplements">;
-      joinGroupId?: Id<"groups">;
     };
 
 export interface PurchaseLineInput {
   itemId: Id<"restockItems">;
   itemName: string;
-  brandName: string; // the selected brand (differs from itemName for groups)
+  candidateLabel: string;
+  subject:
+    | { kind: "supplement"; supplementId: Id<"supplements"> }
+    | { kind: "group"; groupId: Id<"groups"> };
+  purchaseDestinations: Array<{
+    supplementId: Id<"supplements">;
+    name: string;
+  }>;
   defaultQty: number;
-  defaultPrice: number | null; // entered price, falling back to average
-  defaultCount: number; // the candidate's count (pills per bottle)
-  /** Slice 06 temp default — slice 09 adds Land-as radios. */
-  destination: PurchaseDestination;
+  defaultPrice: number | null;
+  defaultCount: number | null;
 }
 
 interface LineState {
   include: boolean;
+  destination: "" | "new" | `existing:${string}`;
+  newName: string;
+  formGroup: boolean;
   qty: string;
   price: string;
   count: string;
@@ -59,9 +66,12 @@ export function PurchaseDialog({
         l.itemId,
         {
           include: true,
+          destination: "",
+          newName: l.candidateLabel,
+          formGroup: false,
           qty: String(l.defaultQty),
           price: l.defaultPrice !== null ? l.defaultPrice.toFixed(2) : "",
-          count: String(l.defaultCount),
+          count: l.defaultCount !== null ? String(l.defaultCount) : "",
         },
       ])
     )
@@ -78,22 +88,46 @@ export function PurchaseDialog({
   const included = lines.filter((l) => state[l.itemId]?.include);
   const parsed = included.map((l) => {
     const s = state[l.itemId];
+    const destination: PurchaseDestination | null =
+      s.destination === "new"
+        ? {
+            kind: "new",
+            name: s.newName.trim(),
+            ...(l.subject.kind === "supplement" && s.formGroup
+              ? { formGroupWithSubjectId: l.subject.supplementId }
+              : {}),
+          }
+        : s.destination.startsWith("existing:")
+          ? {
+              kind: "existing",
+              supplementId: s.destination.slice(
+                "existing:".length
+              ) as Id<"supplements">,
+            }
+          : null;
     return {
       line: l,
-      qty: parseInt(s.qty, 10),
+      destination,
+      qty: Number(s.qty),
       price: parseFloat(s.price),
-      count: parseInt(s.count, 10),
+      count: Number(s.count),
     };
   });
+  const purchasedAt = new Date(`${date}T12:00:00`).getTime();
   const valid =
     included.length > 0 &&
+    Number.isFinite(purchasedAt) &&
     parsed.every(
       (p) =>
+        p.destination !== null &&
+        (p.destination.kind !== "new" || p.destination.name.length > 0) &&
         Number.isFinite(p.qty) &&
+        Number.isInteger(p.qty) &&
         p.qty >= 1 &&
         Number.isFinite(p.price) &&
         p.price >= 0 &&
         Number.isFinite(p.count) &&
+        Number.isInteger(p.count) &&
         p.count >= 1
     );
   const total = parsed.reduce(
@@ -108,13 +142,13 @@ export function PurchaseDialog({
     try {
       await markPurchased({
         retailerId,
-        purchasedAt: new Date(`${date}T12:00:00`).getTime(),
+        purchasedAt,
         lines: parsed.map((p) => ({
           itemId: p.line.itemId,
           qty: p.qty,
           pricePerBottle: p.price,
           countPerBottle: p.count,
-          destination: p.line.destination,
+          destination: p.destination!,
         })),
       });
       onClose();
@@ -159,10 +193,10 @@ export function PurchaseDialog({
                   />
                   <span className="text-sm font-semibold flex-1">
                     {l.itemName}
-                    {l.brandName !== l.itemName && (
+                    {l.candidateLabel !== l.itemName && (
                       <span className="font-normal text-text-muted">
                         {" "}
-                        — {l.brandName}
+                        — {l.candidateLabel}
                       </span>
                     )}
                   </span>
@@ -173,48 +207,133 @@ export function PurchaseDialog({
                   )}
                 </label>
                 {s.include && (
-                  <div className="grid grid-cols-3 gap-2 mt-2 pl-6">
-                    <label className="block">
-                      <span className="text-[11px] font-semibold text-text-muted">
-                        Bottles
-                      </span>
-                      <input
-                        type="number"
-                        min="1"
-                        value={s.qty}
-                        onChange={(e) => patch(l.itemId, { qty: e.target.value })}
-                        className="mt-0.5 w-full px-2 py-1.5 text-sm border border-border-strong rounded-md bg-surface"
-                      />
-                    </label>
-                    <label className="block">
-                      <span className="text-[11px] font-semibold text-text-muted">
-                        Price / bottle
-                      </span>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={s.price}
-                        onChange={(e) =>
-                          patch(l.itemId, { price: e.target.value })
-                        }
-                        className="mt-0.5 w-full px-2 py-1.5 text-sm border border-border-strong rounded-md bg-surface"
-                      />
-                    </label>
-                    <label className="block">
-                      <span className="text-[11px] font-semibold text-text-muted">
-                        Pills / bottle
-                      </span>
-                      <input
-                        type="number"
-                        min="1"
-                        value={s.count}
-                        onChange={(e) =>
-                          patch(l.itemId, { count: e.target.value })
-                        }
-                        className="mt-0.5 w-full px-2 py-1.5 text-sm border border-border-strong rounded-md bg-surface"
-                      />
-                    </label>
+                  <div className="mt-3 pl-6 space-y-3">
+                    <fieldset>
+                      <legend className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5">
+                        Land as
+                      </legend>
+                      <div className="space-y-1.5">
+                        {l.purchaseDestinations.map((destination) => (
+                          <label
+                            key={destination.supplementId}
+                            className="flex items-center gap-2 text-sm cursor-pointer"
+                          >
+                            <input
+                              type="radio"
+                              name={`destination-${l.itemId}`}
+                              checked={
+                                s.destination ===
+                                `existing:${destination.supplementId}`
+                              }
+                              onChange={() =>
+                                patch(l.itemId, {
+                                  destination: `existing:${destination.supplementId}`,
+                                })
+                              }
+                              className="accent-primary"
+                            />
+                            {destination.name}
+                          </label>
+                        ))}
+                        <label className="flex items-center gap-2 text-sm cursor-pointer">
+                          <input
+                            type="radio"
+                            name={`destination-${l.itemId}`}
+                            checked={s.destination === "new"}
+                            onChange={() =>
+                              patch(l.itemId, { destination: "new" })
+                            }
+                            className="accent-primary"
+                          />
+                          Add new supplement
+                        </label>
+                      </div>
+                    </fieldset>
+
+                    {s.destination === "new" && (
+                      <div className="rounded-md bg-surface-alt border border-border px-3 py-2 space-y-2">
+                        <label className="block">
+                          <span className="text-[11px] font-semibold text-text-muted">
+                            Supplement name
+                          </span>
+                          <input
+                            type="text"
+                            value={s.newName}
+                            onChange={(e) =>
+                              patch(l.itemId, { newName: e.target.value })
+                            }
+                            className="mt-0.5 w-full px-2 py-1.5 text-sm border border-border-strong rounded-md bg-surface"
+                          />
+                        </label>
+                        {l.subject.kind === "supplement" ? (
+                          <label className="flex items-center gap-2 text-xs cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={s.formGroup}
+                              onChange={(e) =>
+                                patch(l.itemId, {
+                                  formGroup: e.target.checked,
+                                })
+                              }
+                              className="accent-primary"
+                            />
+                            Form a group with {l.itemName}
+                          </label>
+                        ) : (
+                          <p className="text-xs text-text-muted">
+                            Will add to {l.itemName}
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-3 gap-2">
+                      <label className="block">
+                        <span className="text-[11px] font-semibold text-text-muted">
+                          Bottles
+                        </span>
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={s.qty}
+                          onChange={(e) =>
+                            patch(l.itemId, { qty: e.target.value })
+                          }
+                          className="mt-0.5 w-full px-2 py-1.5 text-sm border border-border-strong rounded-md bg-surface"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="text-[11px] font-semibold text-text-muted">
+                          Price / bottle
+                        </span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={s.price}
+                          onChange={(e) =>
+                            patch(l.itemId, { price: e.target.value })
+                          }
+                          className="mt-0.5 w-full px-2 py-1.5 text-sm border border-border-strong rounded-md bg-surface"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="text-[11px] font-semibold text-text-muted">
+                          Pills / bottle
+                        </span>
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={s.count}
+                          onChange={(e) =>
+                            patch(l.itemId, { count: e.target.value })
+                          }
+                          className="mt-0.5 w-full px-2 py-1.5 text-sm border border-border-strong rounded-md bg-surface"
+                        />
+                      </label>
+                    </div>
                   </div>
                 )}
               </div>

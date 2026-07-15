@@ -28,14 +28,12 @@ import {
   buildBasketLines,
   cheapestBasketRetailerIds,
   computeRetailerBasket,
-  lowestPerPillCandidateIds,
 } from "../lib/restock-basket-math";
+import { validatePurchaseActuals } from "../lib/purchase-actuals-utils";
 
 // The Restock Planner backend (ADR-0006 / ADR-0009). One active plan per
 // household, user-curated only; retailer baskets are derived server-side from
 // selected candidates — never stored; purchases land as individual bottle rows.
-
-// Legacy offer fields may still exist on documents until migration clears them.
 
 // --- Subject states ----------------------------------------------------------
 // A "subject" is what runs out: a solo supplement or a whole group (never an
@@ -255,11 +253,12 @@ const planItemValidator = v.object({
   selectedCandidateId: v.union(v.id("candidateProducts"), v.null()),
   enteredPrice: v.union(v.number(), v.null()),
   candidates: v.array(candidateSummary),
-  // Requires ≥2 candidates with entered price + count; with single enteredPrice
-  // on the item only the selected candidate is priced — always [] until multi-price.
-  lowestPerPillCandidateIds: v.array(v.id("candidateProducts")),
-  /** Default existing destination for Mark-as-Purchased (slice 06 temp UI). */
-  defaultDestinationSupplementId: v.id("supplements"),
+  purchaseDestinations: v.array(
+    v.object({
+      supplementId: v.id("supplements"),
+      name: v.string(),
+    })
+  ),
 });
 
 // --- Queries -----------------------------------------------------------------
@@ -405,8 +404,10 @@ export const plan = query({
         label: string;
         count: number | null;
       }>;
-      lowestPerPillCandidateIds: Id<"candidateProducts">[];
-      defaultDestinationSupplementId: Id<"supplements">;
+      purchaseDestinations: Array<{
+        supplementId: Id<"supplements">;
+        name: string;
+      }>;
     };
 
     const enriched: EnrichedItem[] = [];
@@ -460,18 +461,10 @@ export const plan = query({
         selectedCandidateId: item.selectedCandidateId ?? null,
         enteredPrice: item.enteredPrice ?? null,
         candidates,
-        lowestPerPillCandidateIds: lowestPerPillCandidateIds(
-          rawCandidates.map((c) => ({
-            candidateId: c._id,
-            enteredPrice:
-              c._id === item.selectedCandidateId
-                ? (item.enteredPrice ?? null)
-                : null,
-            count: c.count ?? null,
-          }))
-        ) as Id<"candidateProducts">[],
-        defaultDestinationSupplementId:
-          subject.defaultBrand?._id ?? subject.brands[0]!._id,
+        purchaseDestinations: subject.brands.map((brand) => ({
+          supplementId: brand._id,
+          name: brand.name,
+        })),
       };
 
       enriched.push(planItem);
@@ -707,7 +700,6 @@ const purchaseDestinationValidator = v.union(
     kind: v.literal("new"),
     name: v.string(),
     formGroupWithSubjectId: v.optional(v.id("supplements")),
-    joinGroupId: v.optional(v.id("groups")),
   })
 );
 
@@ -721,7 +713,6 @@ async function resolvePurchaseDestination(
     kind: "new";
     name: string;
     formGroupWithSubjectId?: Id<"supplements">;
-    joinGroupId?: Id<"groups">;
   },
   jarSize: number
 ): Promise<Id<"supplements">> {
@@ -750,23 +741,12 @@ async function resolvePurchaseDestination(
   const name = destination.name.trim();
   if (!name) throw new Error("New supplement name is required.");
 
-  if (destination.formGroupWithSubjectId && destination.joinGroupId) {
-    throw new Error("Cannot form a group and join a group on the same purchase.");
-  }
   if (destination.formGroupWithSubjectId) {
     if (item.groupId) {
       throw new Error("Form-group is only valid for solo subjects.");
     }
     if (destination.formGroupWithSubjectId !== item.supplementId) {
       throw new Error("Form-group subject must match the plan item.");
-    }
-  }
-  if (destination.joinGroupId) {
-    if (!item.groupId) {
-      throw new Error("Join-group is only valid for group subjects.");
-    }
-    if (destination.joinGroupId !== item.groupId) {
-      throw new Error("Join-group must match the plan item's group.");
     }
   }
 
@@ -780,8 +760,8 @@ async function resolvePurchaseDestination(
     createdAt: now,
   });
 
-  if (destination.joinGroupId) {
-    await addSupplementToGroup(ctx, destination.joinGroupId, newSupplementId);
+  if (item.groupId) {
+    await addSupplementToGroup(ctx, item.groupId, newSupplementId);
     return newSupplementId;
   }
 
@@ -827,11 +807,8 @@ export const markPurchased = mutation({
     if (!retailer) throw new Error("Retailer not found.");
     await requireMembership(ctx, retailer.householdId);
 
-    if (!Number.isFinite(purchasedAt)) {
-      throw new Error("Invalid purchase date.");
-    }
+    validatePurchaseActuals(purchasedAt, lines);
 
-    const now = Date.now();
     for (const line of lines) {
       const item = await requireActiveItem(ctx, line.itemId);
       if (item.householdId !== retailer.householdId) {
@@ -845,15 +822,9 @@ export const markPurchased = mutation({
         throw new Error(`"${item._id}" isn't assigned to this retailer.`);
       }
 
-      const qty = Math.max(1, Math.round(line.qty));
-      const countFromLine = Math.round(line.countPerBottle);
-      const count = Math.max(
-        1,
-        Number.isFinite(countFromLine) && countFromLine >= 1
-          ? countFromLine
-          : (candidate.count ?? 1)
-      );
-      const price = Math.max(0, line.pricePerBottle);
+      const qty = line.qty;
+      const count = line.countPerBottle;
+      const price = line.pricePerBottle;
       const url = candidate.url;
 
       const destinationSupplementId = await resolvePurchaseDestination(
@@ -884,7 +855,7 @@ export const markPurchased = mutation({
         url
       );
 
-      await ctx.db.patch(item._id, { status: "purchased", purchasedAt: now });
+      await ctx.db.patch(item._id, { status: "purchased", purchasedAt });
     }
     return null;
   },

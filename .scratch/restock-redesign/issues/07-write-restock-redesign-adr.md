@@ -22,4 +22,4 @@ What ADR (superseding ADR-0006 where this redesign reverses or replaces it) reco
 
 Consolidates wayfinder tickets 01–06. Supersedes ADR-0006 on Offer matrix, average $/pill, gap-only shipping, and implicit brand at purchase. Preserves ADR-0006 manual pricing, curated plan, Retailer entity, derived orders, session-scoped prices, and household knobs.
 
-**Asset:** `docs/adr/0009-restock-candidate-products-all-in-baskets.md` · Implementation spec: `specs/restock-redesign/README.md`
+**Asset:** `docs/adr/0009-restock-candidate-products-all-in-baskets.md` · Closed implementation record: `specs/done/restock-redesign/README.md`

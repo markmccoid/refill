@@ -27,7 +27,6 @@ function loadTsModule(relativePath) {
 const {
   buildBasketLines,
   computeRetailerBasket,
-  lowestPerPillCandidateIds,
   cheapestBasketRetailerIds,
 } = loadTsModule("lib/restock-basket-math.ts");
 
@@ -214,30 +213,6 @@ test("cheapest-basket returns empty when fewer than 2 eligible", () => {
         shippingUnknown: true,
         allIn: null,
       },
-    ]),
-    []
-  );
-});
-
-// --- lowestPerPillCandidateIds ---
-
-test("lowest $/pill requires ≥2 candidates with price + count; ties return all", () => {
-  const winners = lowestPerPillCandidateIds([
-    { candidateId: "a", enteredPrice: 20, count: 100 }, // 0.20
-    { candidateId: "b", enteredPrice: 18, count: 90 }, // 0.20
-    { candidateId: "c", enteredPrice: 30, count: 100 }, // 0.30
-    { candidateId: "d", enteredPrice: 10, count: null }, // skip
-    { candidateId: "e", enteredPrice: null, count: 50 }, // skip
-  ]);
-
-  assert.deepEqual(winners.sort(), ["a", "b"]);
-});
-
-test("lowest $/pill returns empty when fewer than 2 priced+counted", () => {
-  assert.deepEqual(
-    lowestPerPillCandidateIds([
-      { candidateId: "a", enteredPrice: 20, count: 100 },
-      { candidateId: "b", enteredPrice: null, count: 50 },
     ]),
     []
   );
