@@ -1,0 +1,879 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Refill — Supplements UX Mockups</title>
+<style>
+  /* ---- Tokens lifted from app/globals.css (light theme) ---- */
+  :root {
+    --bg: rgb(241 244 240);
+    --surface: rgb(255 255 255);
+    --surface-alt: rgb(251 252 251);
+    --text: rgb(28 38 32);
+    --text-muted: rgb(94 107 99);
+    --text-faint: rgb(138 149 142);
+    --text-label: rgb(70 82 75);
+    --primary: rgb(46 125 91);
+    --primary-dark: rgb(31 92 65);
+    --primary-light: rgb(234 242 236);
+    --critical: rgb(192 73 47);
+    --critical-light: rgb(248 232 227);
+    --low: rgb(176 125 24);
+    --low-light: rgb(247 239 218);
+    --on-track: rgb(46 125 91);
+    --on-track-light: rgb(231 241 234);
+    --stocked: rgb(31 92 65);
+    --stocked-light: rgb(226 236 230);
+    --border: rgba(20, 40, 30, 0.07);
+    --border-strong: rgba(20, 40, 30, 0.13);
+    --shadow-card: 0 6px 24px -10px rgba(20, 40, 30, 0.18);
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; border-color: var(--border); }
+  html { background: var(--bg); }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 15px; line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font: inherit; cursor: pointer; background: none; border: none; color: inherit; transition: background .15s, color .15s, border-color .15s; }
+  input, select { font: inherit; color: var(--text); background: var(--surface); }
+  .mono { font-family: var(--mono); }
+
+  /* ---- Mockup chrome (tab bar at top) ---- */
+  .mock-nav {
+    position: sticky; top: 0; z-index: 40;
+    background: rgb(28 38 32); color: #fff;
+    display: flex; align-items: center; gap: 4px; padding: 10px 20px;
+  }
+  .mock-nav .brand { font-weight: 700; font-size: 13px; letter-spacing: .06em; text-transform: uppercase; opacity: .7; margin-right: 16px; }
+  .mock-nav button {
+    color: rgba(255,255,255,.65); font-size: 13.5px; font-weight: 600;
+    padding: 7px 14px; border-radius: 8px;
+  }
+  .mock-nav button:hover { color: #fff; }
+  .mock-nav button.active { background: rgba(255,255,255,.14); color: #fff; }
+  .mock-note {
+    margin-left: auto; font-size: 12px; color: rgba(255,255,255,.5);
+  }
+  .screen { display: none; max-width: 860px; margin: 0 auto; padding: 36px 24px 120px; }
+  .screen.active { display: block; }
+
+  /* Annotation callouts for our iteration discussion */
+  .annot {
+    background: #fff8e6; border: 1px dashed #d9a742; color: #7a5b12;
+    border-radius: 10px; padding: 10px 14px; font-size: 13px; margin: 18px 0;
+  }
+  .annot b { color: #5d450c; }
+
+  /* ---- Shared app primitives ---- */
+  .card { background: var(--surface); border: 1px solid var(--border-strong); border-radius: 12px; box-shadow: var(--shadow-card); }
+  .btn-primary {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    padding: 9px 16px; background: var(--primary); color: #fff;
+    border-radius: 8px; font-weight: 600; font-size: 14px;
+  }
+  .btn-primary:hover { background: var(--primary-dark); }
+  .btn-outline {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    padding: 9px 16px; border: 1px solid var(--border-strong); color: var(--text);
+    border-radius: 8px; font-weight: 600; font-size: 14px; background: var(--surface);
+  }
+  .btn-outline:hover { background: var(--surface-alt); }
+  .btn-ghost { color: var(--primary); font-weight: 600; font-size: 13.5px; padding: 6px 10px; border-radius: 8px; }
+  .btn-ghost:hover { background: var(--primary-light); }
+
+  .pill { display: inline-flex; align-items: center; gap: 5px; padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: 600; white-space: nowrap; }
+  .pill.critical { color: var(--critical); background: var(--critical-light); border: 1px solid rgba(192,73,47,.25); }
+  .pill.low { color: var(--low); background: var(--low-light); }
+  .pill.on-track { color: var(--on-track); background: var(--on-track-light); }
+  .pill.stocked { color: var(--stocked); background: var(--stocked-light); }
+
+  .thumb {
+    width: 56px; height: 56px; border-radius: 10px; flex-shrink: 0;
+    border: 1px solid var(--border-strong); overflow: hidden;
+    display: flex; align-items: center; justify-content: center; font-size: 26px;
+  }
+  .thumb.lg { width: 64px; height: 64px; font-size: 30px; }
+  .thumb.sm { width: 40px; height: 40px; font-size: 19px; border-radius: 8px; }
+  .thumb.d3 { background: linear-gradient(135deg, #fef3c7, #fde68a); }
+  .thumb.d3b { background: linear-gradient(135deg, #fff7ed, #fed7aa); }
+  .thumb.d3c { background: linear-gradient(135deg, #fefce8, #fef08a); }
+  .thumb.fish { background: linear-gradient(135deg, #e0f2fe, #bae6fd); }
+  .thumb.fishb { background: linear-gradient(135deg, #eff6ff, #bfdbfe); }
+  .thumb.mag { background: linear-gradient(135deg, #f3e8ff, #e9d5ff); }
+  .thumb.zinc { background: linear-gradient(135deg, #f1f5f9, #e2e8f0); }
+  .thumb.ash { background: linear-gradient(135deg, #ecfdf5, #d1fae5); }
+  .thumb.crea { background: linear-gradient(135deg, #fdf2f8, #fbcfe8); }
+
+  /* Progress bar for supply */
+  .supply { height: 5px; border-radius: 999px; background: rgba(20,40,30,.08); overflow: hidden; margin-top: 8px; }
+  .supply > div { height: 100%; border-radius: 999px; }
+  .supply .fill-critical { background: var(--critical); }
+  .supply .fill-low { background: var(--low); }
+  .supply .fill-ok { background: var(--on-track); }
+  .supply .fill-stocked { background: var(--stocked); }
+
+  .avatar {
+    width: 22px; height: 22px; border-radius: 999px; font-size: 10.5px; font-weight: 700;
+    display: inline-flex; align-items: center; justify-content: center; color: #fff;
+    border: 1.5px solid var(--surface);
+  }
+  .avatar.green { background: var(--primary); }
+  .avatar.amber { background: #b07d18; }
+
+  /* ============ SCREEN 1: Supplements list ============ */
+  .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+  .page-head h1 { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; }
+  .page-head .sub { color: var(--text-muted); font-size: 13.5px; margin-top: 3px; }
+
+  .toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 18px; flex-wrap: wrap; }
+  .search {
+    flex: 1; min-width: 220px; display: flex; align-items: center; gap: 8px;
+    background: var(--surface); border: 1px solid var(--border-strong); border-radius: 10px; padding: 9px 13px;
+  }
+  .search input { border: none; outline: none; flex: 1; font-size: 14px; background: transparent; }
+  .search .icon { color: var(--text-faint); font-size: 14px; }
+  .chips { display: flex; gap: 6px; }
+  .chip {
+    padding: 7px 13px; border-radius: 999px; font-size: 13px; font-weight: 600;
+    color: var(--text-muted); background: var(--surface); border: 1px solid var(--border-strong);
+  }
+  .chip.active { background: rgb(28 38 32); color: #fff; border-color: rgb(28 38 32); }
+  .chip .count { font-family: var(--mono); font-size: 11.5px; opacity: .75; margin-left: 4px; }
+
+  .section-label {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 11.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--text-label); margin: 26px 0 10px;
+  }
+  .section-label.attention { color: var(--critical); }
+  .section-label .line { flex: 1; height: 1px; background: var(--border-strong); }
+
+  .rows { display: flex; flex-direction: column; gap: 10px; }
+
+  .supp-row { display: flex; align-items: center; gap: 14px; padding: 14px 16px; cursor: pointer; }
+  .supp-row:hover { background: var(--surface-alt); }
+  .supp-row .body { flex: 1; min-width: 0; }
+  .supp-row .name { font-weight: 600; font-size: 15px; }
+  .supp-row .meta { color: var(--text-muted); font-size: 13px; margin-top: 2px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .supp-row .meta .sep { color: var(--text-faint); }
+  .supp-row .right { display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
+  .supp-row .spend { text-align: right; width: 62px; }
+  .supp-row .spend .amt { font-family: var(--mono); font-size: 13.5px; }
+  .supp-row .spend .per { font-size: 11px; color: var(--text-faint); }
+  .takers { display: flex; margin-left: -3px; }
+  .takers .avatar { margin-left: -6px; }
+
+  /* Group card — reads as a container */
+  .group-card { overflow: hidden; }
+  .group-head { display: flex; align-items: center; gap: 14px; padding: 14px 16px; width: 100%; text-align: left; }
+  .group-head:hover { background: var(--surface-alt); }
+  .stack { position: relative; width: 64px; height: 64px; flex-shrink: 0; }
+  .stack .thumb { position: absolute; width: 52px; height: 52px; font-size: 24px; }
+  .stack .thumb:nth-child(1) { bottom: 0; left: 0; z-index: 3; box-shadow: 0 2px 8px rgba(20,40,30,.18); }
+  .stack .thumb:nth-child(2) { top: 4px; left: 7px; z-index: 2; transform: rotate(4deg); opacity: .92; }
+  .stack .thumb:nth-child(3) { top: 0; left: 13px; z-index: 1; transform: rotate(9deg); opacity: .8; }
+  .group-badge {
+    font-size: 10px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
+    color: var(--primary); background: var(--primary-light);
+    border-radius: 5px; padding: 2.5px 7px;
+  }
+  .now-taking { display: flex; align-items: center; gap: 7px; margin-top: 5px; font-size: 13px; }
+  .dot-open { width: 7px; height: 7px; border-radius: 999px; background: var(--on-track); box-shadow: 0 0 0 3px var(--on-track-light); }
+  .queue-strip { display: flex; align-items: center; gap: 6px; margin-top: 9px; }
+  .queue-seg { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); background: var(--surface-alt); border: 1px solid var(--border-strong); border-radius: 7px; padding: 3.5px 9px; }
+  .queue-seg.open { border-color: rgba(46,125,91,.4); background: var(--on-track-light); color: var(--on-track); font-weight: 600; }
+  .queue-seg.incoming { border-style: dashed; }
+  .queue-arrow { color: var(--text-faint); font-size: 11px; }
+
+  .group-body { border-top: 1px solid var(--border-strong); background: var(--surface-alt); padding: 14px 16px; display: none; }
+  .group-card.expanded .group-body { display: block; }
+  .member-row { display: flex; align-items: center; gap: 12px; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
+  .member-row .m-name { font-weight: 600; font-size: 13.5px; }
+  .member-row .m-sub { font-size: 12px; color: var(--text-muted); }
+  .member-row .m-right { margin-left: auto; text-align: right; }
+  .m-state { font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; border-radius: 5px; padding: 2.5px 7px; }
+  .m-state.open { color: var(--on-track); background: var(--on-track-light); }
+  .m-state.next { color: var(--text-muted); background: rgba(20,40,30,.06); }
+  .m-state.incoming { color: var(--primary); background: var(--primary-light); border: 1px dashed rgba(46,125,91,.4); }
+  .group-actions { display: flex; gap: 8px; margin-top: 12px; }
+
+  .empty-hint {
+    border: 1.5px dashed var(--border-strong); border-radius: 12px; padding: 18px;
+    display: flex; gap: 14px; align-items: center; color: var(--text-muted); font-size: 13.5px;
+    margin-top: 26px; background: rgba(255,255,255,.5);
+  }
+  .empty-hint .big { font-size: 26px; }
+  .empty-hint b { color: var(--text); }
+
+  /* ============ SCREEN 2: Add supplement wizard ============ */
+  .wiz-head { margin-bottom: 8px; }
+  .wiz-head h1 { font-size: 24px; font-weight: 700; letter-spacing: -.02em; }
+  .wiz-head .sub { color: var(--text-muted); font-size: 13.5px; margin-top: 3px; }
+
+  .steps { display: flex; gap: 0; margin: 22px 0 26px; }
+  .step { flex: 1; display: flex; align-items: center; gap: 10px; padding: 0 4px; cursor: pointer; }
+  .step .num {
+    width: 30px; height: 30px; border-radius: 999px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 700;
+    background: var(--surface); border: 1.5px solid var(--border-strong); color: var(--text-muted);
+  }
+  .step .lbl { font-size: 13px; font-weight: 600; color: var(--text-muted); }
+  .step .lbl small { display: block; font-weight: 400; font-size: 11.5px; color: var(--text-faint); }
+  .step.done .num { background: var(--primary-light); border-color: var(--primary); color: var(--primary); }
+  .step.current .num { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .step.current .lbl { color: var(--text); }
+  .step-bar { flex: 0 0 26px; height: 1.5px; background: var(--border-strong); margin-top: 15px; }
+
+  .wstep { display: none; }
+  .wstep.active { display: block; }
+
+  .field-label { font-size: 12px; font-weight: 700; color: var(--text-label); display: block; margin-bottom: 5px; }
+  .field-label .opt { font-weight: 400; color: var(--text-faint); }
+  .tinput {
+    width: 100%; padding: 10px 13px; border: 1px solid var(--border-strong);
+    border-radius: 9px; font-size: 14px; outline: none;
+  }
+  .tinput:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(46,125,91,.12); }
+  .fgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .fstack { display: flex; flex-direction: column; gap: 16px; }
+
+  .searchbox { position: relative; }
+  .searchbox .tinput { padding-left: 38px; padding-top: 12px; padding-bottom: 12px; font-size: 15px; }
+  .searchbox .icon { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--text-faint); }
+  .dsld-results { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+  .dsld-hit { display: flex; align-items: center; gap: 12px; padding: 11px 13px; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--surface); cursor: pointer; text-align: left; width: 100%; }
+  .dsld-hit:hover { border-color: var(--primary); background: var(--primary-light); }
+  .dsld-hit .h-name { font-weight: 600; font-size: 14px; }
+  .dsld-hit .h-sub { font-size: 12.5px; color: var(--text-muted); }
+  .dsld-hit .use { margin-left: auto; color: var(--primary); font-weight: 600; font-size: 13px; flex-shrink: 0; }
+  .dsld-hit.selected { border-color: var(--primary); background: var(--primary-light); box-shadow: 0 0 0 1px var(--primary); }
+  .linked-banner {
+    display: flex; align-items: center; gap: 10px; background: var(--primary-light);
+    border: 1px solid rgba(46,125,91,.3); border-radius: 10px; padding: 11px 14px; font-size: 13.5px;
+  }
+  .linked-banner b { color: var(--primary); }
+  .linked-banner .unlink { margin-left: auto; color: var(--text-muted); font-size: 12.5px; }
+  .linked-banner .unlink:hover { color: var(--critical); }
+
+  /* group question */
+  .group-q { border: 1px solid var(--border-strong); border-radius: 12px; overflow: hidden; }
+  .group-q .gq-head { padding: 13px 16px; background: var(--surface-alt); border-bottom: 1px solid var(--border-strong); }
+  .group-q .gq-head .t { font-weight: 700; font-size: 14px; }
+  .group-q .gq-head .s { font-size: 12.5px; color: var(--text-muted); margin-top: 2px; }
+  .gq-opt { display: flex; gap: 12px; padding: 13px 16px; cursor: pointer; align-items: flex-start; border-bottom: 1px solid var(--border); }
+  .gq-opt:last-child { border-bottom: none; }
+  .gq-opt:hover { background: var(--surface-alt); }
+  .gq-opt input { margin-top: 3px; accent-color: var(--primary); width: 16px; height: 16px; }
+  .gq-opt .o-t { font-weight: 600; font-size: 14px; }
+  .gq-opt .o-s { font-size: 12.5px; color: var(--text-muted); margin-top: 1px; }
+  .gq-detail { padding: 0 16px 14px 44px; display: none; }
+  .gq-opt.checked + .gq-detail { display: block; }
+  .gq-suggest {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600;
+    color: var(--primary); background: var(--primary-light); border-radius: 999px; padding: 3px 10px; margin-top: 6px;
+  }
+
+  /* bottle visuals */
+  .bottle-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+  .bottle-card { border: 1px solid var(--border-strong); border-radius: 12px; padding: 14px; background: var(--surface); position: relative; }
+  .bottle-card.incoming { border-style: dashed; background: var(--surface-alt); }
+  .bottle-card .remove { position: absolute; top: 8px; right: 10px; color: var(--text-faint); font-size: 15px; }
+  .bottle-card .remove:hover { color: var(--critical); }
+  .bottle-glyph { display: flex; align-items: flex-end; gap: 10px; margin-bottom: 10px; }
+  .bottle-svg { width: 34px; height: 52px; border: 2px solid var(--text-label); border-radius: 7px 7px 9px 9px; position: relative; overflow: hidden; background: var(--surface); }
+  .bottle-svg::before { content: ""; position: absolute; top: -8px; left: 8px; right: 8px; height: 8px; border: 2px solid var(--text-label); border-bottom: none; border-radius: 4px 4px 0 0; }
+  .bottle-svg .juice { position: absolute; left: 0; right: 0; bottom: 0; background: var(--primary); opacity: .75; }
+  .bottle-card .b-count { font-family: var(--mono); font-size: 17px; font-weight: 600; }
+  .bottle-card .b-cap { font-size: 11.5px; color: var(--text-faint); }
+  .bottle-card .b-meta { font-size: 12.5px; color: var(--text-muted); display: flex; flex-direction: column; gap: 3px; }
+  .bottle-card .b-meta .mono { font-size: 12px; }
+  .add-bottle-tile {
+    border: 1.5px dashed var(--border-strong); border-radius: 12px; min-height: 148px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+    color: var(--text-muted); font-weight: 600; font-size: 13.5px; background: transparent;
+  }
+  .add-bottle-tile:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-light); }
+  .add-bottle-tile .plus { font-size: 22px; }
+
+  .inline-tip { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; color: var(--text-muted); background: var(--surface-alt); border: 1px solid var(--border); border-radius: 10px; padding: 11px 14px; }
+  .inline-tip .i { flex-shrink: 0; width: 20px; height: 20px; border-radius: 999px; background: var(--primary-light); color: var(--primary); font-weight: 700; font-size: 12px; display: flex; align-items: center; justify-content: center; margin-top: 1px; }
+
+  /* people / dosage */
+  .person-card { border: 1px solid var(--border-strong); border-radius: 12px; padding: 14px 16px; display: flex; align-items: center; gap: 14px; background: var(--surface); }
+  .person-card.off { opacity: .55; }
+  .person-card .avatar { width: 34px; height: 34px; font-size: 14px; }
+  .person-card .p-name { font-weight: 600; }
+  .person-card .p-sub { font-size: 12.5px; color: var(--text-muted); }
+  .stepper { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+  .stepper button { width: 30px; height: 30px; border: 1px solid var(--border-strong); border-radius: 8px; font-size: 16px; line-height: 1; background: var(--surface); }
+  .stepper button:hover { background: var(--surface-alt); }
+  .stepper .val { font-family: var(--mono); font-size: 14px; width: 58px; text-align: center; }
+  .stepper .unit { font-size: 12px; color: var(--text-faint); }
+  .toggle { width: 40px; height: 23px; border-radius: 999px; background: rgba(20,40,30,.15); position: relative; flex-shrink: 0; }
+  .toggle::after { content: ""; position: absolute; top: 2.5px; left: 3px; width: 18px; height: 18px; border-radius: 999px; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); transition: left .15s; }
+  .toggle.on { background: var(--primary); }
+  .toggle.on::after { left: 19px; }
+
+  /* summary rail + footer */
+  .wiz-layout { display: grid; grid-template-columns: 1fr 250px; gap: 26px; align-items: start; }
+  @media (max-width: 760px) { .wiz-layout { grid-template-columns: 1fr; } .rail { display: none; } }
+  .rail { position: sticky; top: 76px; }
+  .rail .card { padding: 16px; }
+  .rail .r-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--text-label); margin-bottom: 12px; }
+  .tree { font-size: 13px; }
+  .tree .t-root { display: flex; align-items: center; gap: 9px; font-weight: 700; }
+  .tree .t-root .thumb { width: 30px; height: 30px; font-size: 15px; border-radius: 7px; }
+  .tree ul { list-style: none; margin: 8px 0 0 14px; border-left: 1.5px solid var(--border-strong); padding-left: 0; }
+  .tree li { position: relative; padding: 5px 0 5px 16px; color: var(--text-muted); font-size: 12.5px; }
+  .tree li::before { content: ""; position: absolute; left: 0; top: 14px; width: 11px; height: 1.5px; background: var(--border-strong); }
+  .tree li b { color: var(--text); font-weight: 600; }
+  .tree li.faint { color: var(--text-faint); font-style: italic; }
+  .tree .t-group { margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px dashed var(--border-strong); font-size: 12.5px; color: var(--text-muted); display: none; }
+  .tree .t-group.show { display: block; }
+  .tree .t-group b { color: var(--primary); }
+
+  .wiz-footer {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 30;
+    background: var(--surface); border-top: 1px solid var(--border-strong);
+    padding: 13px 24px; display: none;
+  }
+  .wiz-footer.show { display: block; }
+  .wiz-footer .inner { max-width: 860px; margin: 0 auto; display: flex; align-items: center; gap: 10px; }
+  .wiz-footer .hint { font-size: 12.5px; color: var(--text-faint); margin-right: auto; }
+
+  h3.blk { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+  p.blk-sub { font-size: 13px; color: var(--text-muted); margin-bottom: 14px; }
+</style>
+</head>
+<body>
+
+<nav class="mock-nav">
+  <span class="brand">Refill · UX mockups</span>
+  <button class="active" data-screen="list" onclick="showScreen('list', this)">1 · Supplements list</button>
+  <button data-screen="add" onclick="showScreen('add', this)">2 · Add supplement (wizard)</button>
+  <span class="mock-note">interactive — click around</span>
+</nav>
+
+<!-- ================================================================== -->
+<!-- SCREEN 1 — SUPPLEMENTS LIST                                        -->
+<!-- ================================================================== -->
+<section id="screen-list" class="screen active">
+
+  <div class="page-head">
+    <div>
+      <h1>Supplements</h1>
+      <p class="sub">8 supplements — 2 running low</p>
+    </div>
+    <div style="display:flex; gap:8px;">
+      <button class="btn-primary">＋ Add supplement</button>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <div class="search">
+      <span class="icon">⌕</span>
+      <input placeholder="Search supplements &amp; brands…" />
+    </div>
+    <div class="chips">
+      <button class="chip active">All <span class="count">8</span></button>
+      <button class="chip">Needs attention <span class="count">2</span></button>
+      <button class="chip">Groups <span class="count">2</span></button>
+    </div>
+  </div>
+
+  <div class="annot"><b>Changes vs today:</b> urgency-first sections replace DB order · groups read as stacked containers with a visible queue · "loose" jargon gone · search + filter chips · grouping discoverable from each row's ⋯ menu and the hint at the bottom.</div>
+
+  <!-- Needs attention -->
+  <div class="section-label attention">⚠ Needs attention <span class="line"></span></div>
+  <div class="rows">
+
+    <div class="card supp-row">
+      <div class="thumb zinc">🥈</div>
+      <div class="body">
+        <div class="name">Zinc Picolinate 30 mg</div>
+        <div class="meta">Thorne <span class="sep">·</span> Capsule <span class="sep">·</span> <span class="mono">14 pills left</span></div>
+        <div class="supply"><div class="fill-critical" style="width:9%"></div></div>
+      </div>
+      <div class="right">
+        <div class="takers"><span class="avatar green">M</span></div>
+        <span class="pill critical">4 days</span>
+        <button class="btn-ghost">Restock</button>
+      </div>
+    </div>
+
+    <div class="card supp-row">
+      <div class="thumb mag">💜</div>
+      <div class="body">
+        <div class="name">Magnesium Glycinate</div>
+        <div class="meta">Pure Encapsulations <span class="sep">·</span> Capsule <span class="sep">·</span> <span class="mono">48 pills left</span></div>
+        <div class="supply"><div class="fill-low" style="width:26%"></div></div>
+      </div>
+      <div class="right">
+        <div class="takers"><span class="avatar green">M</span><span class="avatar amber">S</span></div>
+        <span class="pill low">12 days</span>
+        <button class="btn-ghost">Restock</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Everything else -->
+  <div class="section-label">On track <span class="line"></span></div>
+  <div class="rows">
+
+    <!-- GROUP CARD (expanded by default to show the design) -->
+    <div class="card group-card expanded" id="group-d3">
+      <button class="group-head" onclick="document.getElementById('group-d3').classList.toggle('expanded')">
+        <div class="stack">
+          <div class="thumb d3">☀️</div>
+          <div class="thumb d3b">☀️</div>
+          <div class="thumb d3c">☀️</div>
+        </div>
+        <div class="body" style="flex:1; min-width:0;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span class="name" style="font-weight:600;">Vitamin D3</span>
+            <span class="group-badge">Group · 3 brands</span>
+          </div>
+          <div class="now-taking">
+            <span class="dot-open"></span>
+            Now taking <b>&nbsp;Thorne D3 5,000 IU&nbsp;</b> — <span class="mono">&nbsp;74 left</span>
+          </div>
+          <div class="queue-strip">
+            <span class="queue-seg open">● Thorne <span class="mono">74</span></span>
+            <span class="queue-arrow">→</span>
+            <span class="queue-seg">NOW Foods <span class="mono">240</span></span>
+            <span class="queue-arrow">→</span>
+            <span class="queue-seg incoming">⏳ Sports Research <span class="mono">360</span></span>
+          </div>
+        </div>
+        <div class="right" style="display:flex; align-items:center; gap:14px;">
+          <div class="spend" style="text-align:right;">
+            <div class="amt mono" style="font-size:13.5px;">$4.10</div>
+            <div class="per" style="font-size:11px; color:var(--text-faint);">/mo</div>
+          </div>
+          <span class="pill stocked">11 months</span>
+        </div>
+      </button>
+      <div class="group-body">
+        <div class="member-row">
+          <span class="m-state open">● Open</span>
+          <div class="thumb sm d3">☀️</div>
+          <div>
+            <div class="m-name">Thorne D3 5,000 IU</div>
+            <div class="m-sub">Bought Mar 2026 · thorne.com</div>
+          </div>
+          <div class="m-right"><span class="mono" style="font-size:13px;">74 / 90 left</span></div>
+        </div>
+        <div class="member-row">
+          <span class="m-state next">Up next</span>
+          <div class="thumb sm d3b">☀️</div>
+          <div>
+            <div class="m-name">NOW Foods D3 5,000 IU</div>
+            <div class="m-sub">Bought May 2026 · amazon.com</div>
+          </div>
+          <div class="m-right"><span class="mono" style="font-size:13px;">240 sealed</span></div>
+        </div>
+        <div class="member-row">
+          <span class="m-state incoming">Arriving Jul 20</span>
+          <div class="thumb sm d3c">☀️</div>
+          <div>
+            <div class="m-name">Sports Research D3+K2</div>
+            <div class="m-sub">Ordered Jul 14 · iherb.com</div>
+          </div>
+          <div class="m-right"><span class="mono" style="font-size:13px;">360 incoming</span></div>
+        </div>
+        <div style="display:flex; align-items:center; gap:14px; margin-top:12px; font-size:13px; color:var(--text-muted);">
+          <span>Taken by: <b style="color:var(--text);">Mark 7/wk</b> · <b style="color:var(--text);">Sarah 7/wk</b></span>
+          <span style="margin-left:auto; display:flex; gap:6px;">
+            <button class="btn-ghost">＋ Add a brand</button>
+            <button class="btn-ghost">Edit dosage</button>
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- GROUP CARD collapsed -->
+    <div class="card group-card" id="group-fish">
+      <button class="group-head" onclick="document.getElementById('group-fish').classList.toggle('expanded')">
+        <div class="stack">
+          <div class="thumb fish">🐟</div>
+          <div class="thumb fishb">🐟</div>
+        </div>
+        <div class="body" style="flex:1; min-width:0;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span class="name" style="font-weight:600;">Fish Oil / Omega-3</span>
+            <span class="group-badge">Group · 2 brands</span>
+          </div>
+          <div class="now-taking">
+            <span class="dot-open"></span>
+            Now taking <b>&nbsp;Nordic Naturals Ultimate&nbsp;</b> — <span class="mono">&nbsp;51 left</span>
+          </div>
+          <div class="queue-strip">
+            <span class="queue-seg open">● Nordic <span class="mono">51</span></span>
+            <span class="queue-arrow">→</span>
+            <span class="queue-seg">Carlson <span class="mono">180</span></span>
+          </div>
+        </div>
+        <div class="right" style="display:flex; align-items:center; gap:14px;">
+          <div class="spend" style="text-align:right;">
+            <div class="amt mono" style="font-size:13.5px;">$11.30</div>
+            <div class="per" style="font-size:11px; color:var(--text-faint);">/mo</div>
+          </div>
+          <span class="pill on-track">On track</span>
+        </div>
+      </button>
+      <div class="group-body">
+        <div class="member-row">
+          <span class="m-state open">● Open</span>
+          <div class="thumb sm fish">🐟</div>
+          <div><div class="m-name">Nordic Naturals Ultimate Omega</div><div class="m-sub">Bought Apr 2026</div></div>
+          <div class="m-right"><span class="mono" style="font-size:13px;">51 / 120 left</span></div>
+        </div>
+        <div class="member-row">
+          <span class="m-state next">Up next</span>
+          <div class="thumb sm fishb">🐟</div>
+          <div><div class="m-name">Carlson Elite Omega-3</div><div class="m-sub">Bought Jun 2026</div></div>
+          <div class="m-right"><span class="mono" style="font-size:13px;">180 sealed</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card supp-row">
+      <div class="thumb crea">💪</div>
+      <div class="body">
+        <div class="name">Creatine Monohydrate</div>
+        <div class="meta">Optimum Nutrition <span class="sep">·</span> Powder <span class="sep">·</span> <span class="mono">62 servings left</span></div>
+        <div class="supply"><div class="fill-ok" style="width:55%"></div></div>
+      </div>
+      <div class="right">
+        <div class="takers"><span class="avatar green">M</span></div>
+        <span class="pill on-track">On track</span>
+      </div>
+    </div>
+
+    <div class="card supp-row">
+      <div class="thumb ash">🌿</div>
+      <div class="body">
+        <div class="name">Ashwagandha KSM-66</div>
+        <div class="meta">Jarrow <span class="sep">·</span> Capsule <span class="sep">·</span> <span class="mono">210 pills left</span> <span class="sep">·</span> <span class="mono">2 bottles</span></div>
+        <div class="supply"><div class="fill-stocked" style="width:92%"></div></div>
+      </div>
+      <div class="right">
+        <div class="takers"><span class="avatar amber">S</span></div>
+        <span class="pill stocked">Stocked</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="empty-hint">
+    <span class="big">🗂️</span>
+    <span><b>Tip — group interchangeable brands.</b> Taking more than one brand of the same thing (e.g. two Vitamin D3s)? Group them and Refill treats them as one supply: finish one bottle, start the next, one shared dosage. <button class="btn-ghost" style="padding:2px 6px;">Create a group</button></span>
+  </div>
+
+</section>
+
+<!-- ================================================================== -->
+<!-- SCREEN 2 — ADD SUPPLEMENT WIZARD                                   -->
+<!-- ================================================================== -->
+<section id="screen-add" class="screen">
+
+  <div class="wiz-head">
+    <h1>Add a supplement</h1>
+    <p class="sub">A <b>supplement</b> is one product you take. The <b>bottles</b> are the physical jars of it you own.</p>
+  </div>
+
+  <div class="steps">
+    <div class="step current" id="step-ind-1" onclick="goStep(1)">
+      <span class="num">1</span>
+      <span class="lbl">What is it?<small>Name, label &amp; grouping</small></span>
+    </div>
+    <div class="step-bar"></div>
+    <div class="step" id="step-ind-2" onclick="goStep(2)">
+      <span class="num">2</span>
+      <span class="lbl">Your bottles<small>The jars on your shelf</small></span>
+    </div>
+    <div class="step-bar"></div>
+    <div class="step" id="step-ind-3" onclick="goStep(3)">
+      <span class="num">3</span>
+      <span class="lbl">Who takes it<small>Dosage per person</small></span>
+    </div>
+  </div>
+
+  <div class="wiz-layout">
+    <div>
+      <!-- ---------------- STEP 1 ---------------- -->
+      <div class="wstep active" id="wstep-1">
+        <div class="annot"><b>Changes vs today:</b> one focused step for identity · DSLD results inline instead of a modal · the "another brand of something you already track?" question makes the group relationship explicit at add-time (auto-suggested from the name).</div>
+
+        <div class="fstack">
+          <div>
+            <label class="field-label">Search or name the supplement</label>
+            <div class="searchbox">
+              <span class="icon">⌕</span>
+              <input class="tinput" value="Vitamin D3 NOW Foods" />
+            </div>
+            <div class="dsld-results">
+              <button class="dsld-hit selected">
+                <div class="thumb sm d3b">☀️</div>
+                <div>
+                  <div class="h-name">NOW Foods Vitamin D-3 5,000 IU</div>
+                  <div class="h-sub">Softgel · 240 count · NIH DSLD #217841</div>
+                </div>
+                <span class="use">✓ Selected</span>
+              </button>
+              <button class="dsld-hit">
+                <div class="thumb sm d3">☀️</div>
+                <div>
+                  <div class="h-name">NOW Foods Vitamin D-3 2,000 IU</div>
+                  <div class="h-sub">Softgel · 120 count · NIH DSLD #198322</div>
+                </div>
+                <span class="use">Use this</span>
+              </button>
+              <div style="font-size:12.5px; color:var(--text-faint); padding:2px 4px;">Not listed? <a href="#" style="color:var(--primary); font-weight:600;">Enter the label facts manually</a></div>
+            </div>
+          </div>
+
+          <div class="linked-banner">
+            <span style="font-size:16px;">🏷️</span>
+            <span><b>Label linked.</b> Brand, form, serving size and the full Supplement Facts panel were filled in from the NIH database.</span>
+            <button class="unlink">Unlink</button>
+          </div>
+
+          <div class="fgrid">
+            <div><label class="field-label">Brand</label><input class="tinput" value="NOW Foods" /></div>
+            <div><label class="field-label">Form</label><input class="tinput" value="Softgel" /></div>
+          </div>
+
+          <!-- The group question -->
+          <div class="group-q">
+            <div class="gq-head">
+              <div class="t">Is this a new brand of something you already track?</div>
+              <div class="s">Grouped brands share one supply and one dosage — you finish one bottle, then start the next brand.</div>
+            </div>
+            <label class="gq-opt" onclick="pickGq(this, false)">
+              <input type="radio" name="gq" />
+              <span>
+                <span class="o-t">No — it's a new supplement</span>
+                <span class="o-s" style="display:block;">It gets its own supply and dosage.</span>
+              </span>
+            </label>
+            <div class="gq-detail"></div>
+            <label class="gq-opt checked" onclick="pickGq(this, true)">
+              <input type="radio" name="gq" checked />
+              <span>
+                <span class="o-t">Yes — group it with other brands</span>
+                <span class="o-s" style="display:block;">Join an existing group or start a new one. Grouped brands share one supply &amp; dosage.</span>
+                <span class="gq-suggest">✨ Suggested: looks like your “Vitamin D3” group</span>
+              </span>
+            </label>
+            <div class="gq-detail" style="display:block;">
+              <label class="field-label" style="margin-top:6px;">Add to group</label>
+              <select class="tinput" style="max-width:320px;" id="group-select" onchange="pickGroupOption(this)">
+                <option selected>Vitamin D3 — 2 brands · Mark &amp; Sarah, 7/wk each</option>
+                <option>Fish Oil / Omega-3 — 2 brands</option>
+                <option value="new">＋ Start a new group with this…</option>
+              </select>
+              <div style="font-size:12.5px; color:var(--text-muted); margin-top:8px;" id="group-join-note">
+                Skips step 3 — this brand inherits the group's “who takes it”.
+              </div>
+              <div id="new-group-fields" style="display:none; margin-top:12px; padding:14px; border:1px solid var(--border-strong); border-radius:10px; background:var(--surface-alt);">
+                <label class="field-label">New group name</label>
+                <input class="tinput" style="max-width:320px;" value="Vitamin D3" placeholder="e.g. Vitamin D3" />
+                <div style="font-size:12.5px; color:var(--text-muted); margin-top:8px; line-height:1.5;">
+                  This supplement becomes the group's <b>first brand</b>. The dosage
+                  you set in step 3 becomes the <b>group's dosage</b> — future brands
+                  you add will inherit it.
+                </div>
+                <div class="gq-suggest" style="margin-top:8px;">💡 Next time you add a brand of this, it'll be suggested automatically</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ---------------- STEP 2 ---------------- -->
+      <div class="wstep" id="wstep-2">
+        <div class="annot"><b>Changes vs today:</b> bottles are visual cards, not a form-within-a-form · the fill level makes "capacity vs remaining" self-evident · future-dated bottles read as "arriving", clarifying the incoming concept · the tip states the supplement↔bottle relationship in one line.</div>
+
+        <h3 class="blk">Bottles of NOW Foods Vitamin D-3 you own</h3>
+        <p class="blk-sub">Each card is one physical jar. Refill drains the oldest first and forecasts when you'll run out.</p>
+
+        <div class="bottle-grid">
+          <div class="bottle-card">
+            <button class="remove">✕</button>
+            <div class="bottle-glyph">
+              <div class="bottle-svg"><div class="juice" style="height:100%"></div></div>
+              <div>
+                <div class="b-count">240 <span style="font-size:12px; font-weight:400;">pills</span></div>
+                <div class="b-cap">full · unopened</div>
+              </div>
+            </div>
+            <div class="b-meta">
+              <span class="mono">$14.99 · amazon.com</span>
+              <span>Bought Jul 12, 2026</span>
+            </div>
+          </div>
+
+          <div class="bottle-card">
+            <button class="remove">✕</button>
+            <div class="bottle-glyph">
+              <div class="bottle-svg"><div class="juice" style="height:35%"></div></div>
+              <div>
+                <div class="b-count">83 <span style="font-size:12px; font-weight:400;">/ 240</span></div>
+                <div class="b-cap">partially used</div>
+              </div>
+            </div>
+            <div class="b-meta">
+              <span class="mono">$13.49 · iherb.com</span>
+              <span>Bought Mar 2, 2026</span>
+            </div>
+          </div>
+
+          <div class="bottle-card incoming">
+            <button class="remove">✕</button>
+            <div class="bottle-glyph">
+              <div class="bottle-svg" style="opacity:.55;"><div class="juice" style="height:100%"></div></div>
+              <div>
+                <div class="b-count">240 <span style="font-size:12px; font-weight:400;">pills</span></div>
+                <div class="b-cap" style="color:var(--primary); font-weight:600;">⏳ arriving Jul 21</div>
+              </div>
+            </div>
+            <div class="b-meta">
+              <span class="mono">$12.99 · amazon.com</span>
+              <span>Won't be counted until it arrives</span>
+            </div>
+          </div>
+
+          <button class="add-bottle-tile">
+            <span class="plus">＋</span>
+            Add a bottle
+            <span style="font-weight:400; font-size:12px; color:var(--text-faint);">or ⧉ duplicate an existing one</span>
+          </button>
+        </div>
+
+        <div class="inline-tip" style="margin-top:16px;">
+          <span class="i">i</span>
+          <span>No bottles yet? That's fine — save without any and add them when your order arrives. The supplement will show as <b>out of stock</b> until then.</span>
+        </div>
+      </div>
+
+      <!-- ---------------- STEP 3 ---------------- -->
+      <div class="wstep" id="wstep-3">
+        <div class="annot"><b>Changes vs today:</b> per-person toggle + stepper replaces checkbox-reveals-widget · shows the plain-language daily equivalent · if step 1 chose "add to group", this step is skipped entirely (group dosage applies).</div>
+
+        <h3 class="blk">Who takes it?</h3>
+        <p class="blk-sub">Dosage drives the run-out forecast. You can change it anytime.</p>
+
+        <div class="fstack">
+          <div class="person-card">
+            <span class="avatar green">M</span>
+            <div>
+              <div class="p-name">Mark</div>
+              <div class="p-sub">1 pill every day</div>
+            </div>
+            <div class="stepper">
+              <button>−</button>
+              <span class="val">7<span class="unit"> /wk</span></span>
+              <button>＋</button>
+            </div>
+            <span class="toggle on"></span>
+          </div>
+
+          <div class="person-card off">
+            <span class="avatar amber">S</span>
+            <div>
+              <div class="p-name">Sarah</div>
+              <div class="p-sub">Doesn't take this</div>
+            </div>
+            <span class="toggle" style="margin-left:auto;"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---------------- Summary rail ---------------- -->
+    <aside class="rail">
+      <div class="card">
+        <div class="r-title">You're adding</div>
+        <div class="tree">
+          <div class="t-group show">Joins group<br/><b>🗂️ Vitamin D3</b> (3rd brand)</div>
+          <div class="t-root"><span class="thumb d3b">☀️</span> NOW Foods D-3 5,000 IU</div>
+          <ul>
+            <li><b>🍶 240ct</b> — full · $14.99</li>
+            <li><b>🍶 83/240</b> — in use · $13.49</li>
+            <li class="faint">🍶 240ct — arriving Jul 21</li>
+          </ul>
+          <ul style="border-left:none; margin-left:0; margin-top:10px;">
+            <li style="padding-left:0;">👤 Dosage: from group<br/><span style="font-size:12px;">Mark 7/wk · Sarah 7/wk</span></li>
+          </ul>
+        </div>
+      </div>
+      <div style="font-size:12px; color:var(--text-faint); margin-top:10px; padding:0 4px; line-height:1.5;">
+        One <b>supplement</b> (the product) can hold many <b>bottles</b> (your jars). Groups pool several brands into one supply.
+      </div>
+    </aside>
+  </div>
+</section>
+
+<!-- Wizard sticky footer -->
+<div class="wiz-footer" id="wiz-footer">
+  <div class="inner">
+    <span class="hint" id="wiz-hint">Step 1 of 3 — everything can be edited later</span>
+    <button class="btn-outline" id="wiz-back" onclick="goStep(curStep-1)" style="display:none;">← Back</button>
+    <button class="btn-primary" id="wiz-next" onclick="goStep(curStep+1)">Continue →</button>
+  </div>
+</div>
+
+<script>
+  function showScreen(name, btn) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById('screen-' + name).classList.add('active');
+    document.querySelectorAll('.mock-nav button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('wiz-footer').classList.toggle('show', name === 'add');
+    window.scrollTo(0, 0);
+  }
+
+  let curStep = 1;
+  function goStep(n) {
+    if (n < 1) n = 1;
+    if (n > 3) { alert('Mock: would save the supplement and return to the list.'); return; }
+    curStep = n;
+    for (let i = 1; i <= 3; i++) {
+      document.getElementById('wstep-' + i).classList.toggle('active', i === n);
+      const ind = document.getElementById('step-ind-' + i);
+      ind.classList.toggle('current', i === n);
+      ind.classList.toggle('done', i < n);
+      ind.querySelector('.num').textContent = i < n ? '✓' : i;
+    }
+    document.getElementById('wiz-back').style.display = n === 1 ? 'none' : '';
+    document.getElementById('wiz-next').textContent = n === 3 ? 'Save supplement ✓' : 'Continue →';
+    document.getElementById('wiz-hint').textContent = 'Step ' + n + ' of 3 — everything can be edited later';
+    window.scrollTo(0, 0);
+  }
+
+  function pickGroupOption(sel) {
+    const isNew = sel.value === 'new';
+    document.getElementById('new-group-fields').style.display = isNew ? 'block' : 'none';
+    document.getElementById('group-join-note').style.display = isNew ? 'none' : 'block';
+    const tg = document.querySelector('.tree .t-group');
+    tg.innerHTML = isNew
+      ? 'Starts new group<br/><b>🗂️ Vitamin D3</b> (1st brand)'
+      : 'Joins group<br/><b>🗂️ Vitamin D3</b> (3rd brand)';
+  }
+
+  function pickGq(label, joinsGroup) {
+    document.querySelectorAll('.gq-opt').forEach(o => o.classList.remove('checked'));
+    label.classList.add('checked');
+    label.querySelector('input').checked = true;
+    document.querySelectorAll('.gq-detail').forEach(d => d.style.display = 'none');
+    if (joinsGroup) label.nextElementSibling.style.display = 'block';
+    document.querySelector('.tree .t-group').classList.toggle('show', joinsGroup);
+  }
+</script>
+</body>
+</html>

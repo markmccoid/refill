@@ -52,12 +52,59 @@ test("future bottles are incoming and do not deplete before available date", () 
   assert.equal(ledger.openCostPerPill, 0);
 });
 
+test("same calendar day is available even before the stored clock time", () => {
+  // Dates are often saved at local noon; morning of that day must not be "incoming".
+  const noon = Date.UTC(2026, 0, 1, 12);
+  const morning = Date.UTC(2026, 0, 1, 9);
+  const ledger = getBottleStates(
+    [
+      {
+        count: 30,
+        price: 30,
+        purchasedAt: noon,
+        remainingAtAnchor: 30,
+      },
+    ],
+    morning,
+    2,
+    morning
+  );
+
+  assert.equal(ledger.onHand, 30);
+  assert.equal(ledger.incomingCount, 0);
+  assert.equal(ledger.bottleCount, 1);
+});
+
+test("next calendar day remains incoming", () => {
+  const todayNoon = Date.UTC(2026, 0, 1, 12);
+  const tomorrowNoon = Date.UTC(2026, 0, 2, 12);
+  const lateToday = Date.UTC(2026, 0, 1, 20);
+  const ledger = getBottleStates(
+    [
+      {
+        count: 30,
+        price: 30,
+        purchasedAt: tomorrowNoon,
+        remainingAtAnchor: 30,
+      },
+    ],
+    todayNoon,
+    2,
+    lateToday
+  );
+
+  assert.equal(ledger.onHand, 0);
+  assert.equal(ledger.incomingCount, 30);
+});
+
 test("future bottles do not accrue pill debt while unavailable", () => {
+  // Available from local midnight of day+3; depletion runs from then to now (day+5),
+  // not from the stored noon timestamp — so slightly more than 2 full days at rate 2.
   const ledger = getBottleStates([bottle(30, 3)], jan1, 2, jan1 + 5 * day);
 
-  assert.equal(ledger.onHand, 26);
+  assert.equal(ledger.onHand, 25);
   assert.equal(ledger.incomingCount, 0);
-  assert.equal(ledger.openRemaining, 26);
+  assert.equal(ledger.openRemaining, 25);
 });
 
 test("available bottles drain before future bottles join the queue", () => {

@@ -54,12 +54,13 @@ export const add = mutation({
     price: v.number(),
     purchaseUrl: v.optional(v.string()),
     purchasedAt: v.optional(v.number()),
+    remaining: v.optional(v.number()), // pills on hand now (defaults to full count)
     qty: v.optional(v.number()), // identical bottles to insert (default 1)
   },
   returns: v.id("bottles"),
   async handler(
     ctx,
-    { supplementId, count, price, purchaseUrl, purchasedAt, qty }
+    { supplementId, count, price, purchaseUrl, purchasedAt, remaining, qty }
   ) {
     const supplement = await requireSupplementAccess(ctx, supplementId);
     // A purchase URL feeds the retailer model (ADR-0006): match/create the
@@ -71,6 +72,10 @@ export const add = mutation({
     // Freeze existing bottles' remaining at the current rate before adding.
     await reanchorFor(ctx, supplementId);
     const n = Math.max(1, Math.min(99, Math.round(qty ?? 1)));
+    const remainingAtAnchor =
+      remaining !== undefined
+        ? Math.max(0, Math.min(remaining, count))
+        : count;
     let id: Id<"bottles"> | null = null;
     for (let i = 0; i < n; i++) {
       id = await ctx.db.insert("bottles", {
@@ -80,7 +85,7 @@ export const add = mutation({
         purchaseUrl: url || undefined,
         retailerId: retailerId ?? undefined,
         purchasedAt: purchasedAt ?? Date.now(),
-        remainingAtAnchor: count, // a fresh bottle is full at the new anchor
+        remainingAtAnchor,
       });
     }
     await syncAnchorCache(ctx, supplementId);

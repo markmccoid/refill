@@ -164,6 +164,23 @@ export interface BottleLike {
   remainingAtAnchor: number;
 }
 
+/** Local calendar midnight for a timestamp (available-date comparisons). */
+export function startOfLocalDay(ms: number): number {
+  const d = new Date(ms);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+}
+
+/**
+ * A bottle is available on its available date's local calendar day and after —
+ * not only after the stored clock time (dates are often saved at local noon).
+ */
+export function isBottleAvailable(
+  purchasedAt: number,
+  now: number = Date.now()
+): boolean {
+  return startOfLocalDay(purchasedAt) <= startOfLocalDay(now);
+}
+
 export interface BottleState<B extends BottleLike = BottleLike> {
   bottle: B;
   remaining: number; // pills left in this bottle now
@@ -212,8 +229,10 @@ function getBottleLedger<B extends BottleLike>(
   const availableQueue: B[] = [];
   const availabilityEvents: B[] = [];
   for (const bottle of ordered) {
-    if (bottle.purchasedAt <= anchoredAt) availableQueue.push(bottle);
-    else if (bottle.purchasedAt <= now) availabilityEvents.push(bottle);
+    // Available from local midnight of the available date, not the stored clock time.
+    const availableAt = startOfLocalDay(bottle.purchasedAt);
+    if (availableAt <= anchoredAt) availableQueue.push(bottle);
+    else if (availableAt <= now) availabilityEvents.push(bottle);
   }
 
   const drain = (from: number, to: number) => {
@@ -231,12 +250,15 @@ function getBottleLedger<B extends BottleLike>(
   let cursor = anchoredAt;
   let eventIndex = 0;
   while (eventIndex < availabilityEvents.length) {
-    const availableAt = availabilityEvents[eventIndex].purchasedAt;
+    const availableAt = startOfLocalDay(
+      availabilityEvents[eventIndex].purchasedAt
+    );
     drain(cursor, availableAt);
     cursor = availableAt;
     while (
       eventIndex < availabilityEvents.length &&
-      availabilityEvents[eventIndex].purchasedAt === availableAt
+      startOfLocalDay(availabilityEvents[eventIndex].purchasedAt) ===
+        availableAt
     ) {
       availableQueue.push(availabilityEvents[eventIndex]);
       eventIndex += 1;
@@ -257,13 +279,15 @@ function getBottleLedger<B extends BottleLike>(
   });
 
   const open = states.find(
-    (s) => s.bottle.purchasedAt <= now && s.remaining > 0
+    (s) => isBottleAvailable(s.bottle.purchasedAt, now) && s.remaining > 0
   );
   if (open) open.isOpen = true;
 
-  const availableStates = states.filter((s) => s.bottle.purchasedAt <= now);
+  const availableStates = states.filter((s) =>
+    isBottleAvailable(s.bottle.purchasedAt, now)
+  );
   const incomingStates = states.filter(
-    (s) => s.bottle.purchasedAt > now && s.remaining > 0
+    (s) => !isBottleAvailable(s.bottle.purchasedAt, now) && s.remaining > 0
   );
   const onHandExact = availableStates.reduce((sum, s) => sum + s.remaining, 0);
   const incomingCount = incomingStates.reduce((sum, s) => sum + s.remaining, 0);

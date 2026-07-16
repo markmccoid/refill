@@ -141,6 +141,7 @@ export const create = mutation({
         price: v.number(),
         purchaseUrl: v.optional(v.string()),
         purchasedAt: v.number(),
+        remaining: v.optional(v.number()), // pills on hand now (defaults to full count)
       })
     ),
   },
@@ -150,7 +151,13 @@ export const create = mutation({
     const { bottles, ...supplementFields } = args;
     const now = Date.now();
 
-    const onHand = bottles.reduce((sum, b) => sum + b.count, 0);
+    const onHand = bottles.reduce((sum, b) => {
+      const remaining =
+        b.remaining !== undefined
+          ? Math.max(0, Math.min(b.remaining, b.count))
+          : b.count;
+      return sum + remaining;
+    }, 0);
     const supplementId = await ctx.db.insert("supplements", {
       ...supplementFields,
       quantityAnchor: onHand,
@@ -165,6 +172,10 @@ export const create = mutation({
       const retailerId = url
         ? await linkPurchaseUrl(ctx, args.householdId, supplementId, url)
         : null;
+      const remainingAtAnchor =
+        b.remaining !== undefined
+          ? Math.max(0, Math.min(b.remaining, b.count))
+          : b.count;
       await ctx.db.insert("bottles", {
         supplementId,
         count: b.count,
@@ -172,7 +183,7 @@ export const create = mutation({
         purchaseUrl: url || undefined,
         retailerId: retailerId ?? undefined,
         purchasedAt: b.purchasedAt,
-        remainingAtAnchor: b.count, // full at the creation anchor
+        remainingAtAnchor,
       });
     }
 

@@ -40,7 +40,7 @@ function toDateInput(ms: number): string {
 }
 function fromDateInput(s: string): number {
   const [y, m, d] = s.split("-").map(Number);
-  return new Date(y, m - 1, d, 12, 0, 0).getTime();
+  return new Date(y, m - 1, d, 0, 0, 0).getTime();
 }
 function storeLabel(url: string): string {
   try {
@@ -55,6 +55,7 @@ const emptyBottleDraft = (count: number): BottleFieldsValue => ({
   price: 0,
   purchaseUrl: "",
   purchasedAt: toDateInput(Date.now()),
+  remaining: count,
 });
 
 export default function AddSupplementPage() {
@@ -90,8 +91,9 @@ export default function AddSupplementPage() {
     imageUrl: "",
   });
 
-  // Bottles added so far, plus the in-progress draft.
+  // Bottles added so far, plus the in-progress draft (shown only when adding).
   const [bottles, setBottles] = useState<BottleFieldsValue[]>([]);
+  const [addingBottle, setAddingBottle] = useState(false);
   const [bottleDraft, setBottleDraft] = useState<BottleFieldsValue>(
     emptyBottleDraft(120)
   );
@@ -116,7 +118,26 @@ export default function AddSupplementPage() {
       nutrients: label.nutrientHighlights,
       jarSize,
     }));
-    setBottleDraft((prev) => ({ ...prev, count: jarSize }));
+    setBottleDraft((prev) => ({
+      ...prev,
+      count: jarSize,
+      remaining:
+        prev.remaining === prev.count
+          ? jarSize
+          : Math.min(prev.remaining, jarSize),
+    }));
+  }
+
+  function openNewBottle(draft?: BottleFieldsValue) {
+    setBottleDraft(draft ?? emptyBottleDraft(formData.jarSize));
+    setBottleQty(1);
+    setAddingBottle(true);
+  }
+
+  function cancelNewBottle() {
+    setAddingBottle(false);
+    setBottleDraft(emptyBottleDraft(formData.jarSize));
+    setBottleQty(1);
   }
 
   function addBottleToList() {
@@ -124,8 +145,13 @@ export default function AddSupplementPage() {
       setError("Bottle count must be greater than 0");
       return;
     }
+    const entry = {
+      ...bottleDraft,
+      remaining: Math.max(0, Math.min(bottleDraft.remaining, bottleDraft.count)),
+    };
     // qty > 1 = several identical bottles from one order; each is its own row.
-    setBottles([...bottles, ...Array(bottleQty).fill(bottleDraft)]);
+    setBottles([...bottles, ...Array(bottleQty).fill(entry)]);
+    setAddingBottle(false);
     setBottleDraft(emptyBottleDraft(formData.jarSize));
     setBottleQty(1);
     setError("");
@@ -165,6 +191,7 @@ export default function AddSupplementPage() {
           price: b.price,
           purchaseUrl: b.purchaseUrl || undefined,
           purchasedAt: fromDateInput(b.purchasedAt),
+          remaining: Math.max(0, Math.min(b.remaining, b.count)),
         })),
       });
 
@@ -409,7 +436,14 @@ export default function AddSupplementPage() {
               onChange={(e) => {
                 const jarSize = Math.max(0, parseInt(e.target.value) || 0);
                 setFormData({ ...formData, jarSize });
-                setBottleDraft((prev) => ({ ...prev, count: jarSize }));
+                setBottleDraft((prev) => ({
+                  ...prev,
+                  count: jarSize,
+                  remaining:
+                    prev.remaining === prev.count
+                      ? jarSize
+                      : Math.min(prev.remaining, jarSize),
+                }));
               }}
               className="w-full mt-1 px-4 py-2 border border-border-strong rounded-lg font-mono text-sm"
             />
@@ -449,10 +483,7 @@ export default function AddSupplementPage() {
                   </span>
                   <button
                     type="button"
-                    onClick={() => {
-                      setBottleDraft({ ...b });
-                      setBottleQty(1);
-                    }}
+                    onClick={() => openNewBottle({ ...b })}
                     className="text-xs text-primary hover:underline"
                   >
                     Copy
@@ -471,25 +502,44 @@ export default function AddSupplementPage() {
             </div>
           )}
 
-          <div className="border-t border-border-strong pt-3 space-y-2">
-            <BottleFields
-              value={bottleDraft}
-              onChange={setBottleDraft}
-              quantity={bottleQty}
-              onQuantityChange={setBottleQty}
-            />
-            <button
-              type="button"
-              onClick={addBottleToList}
-              className="w-full px-3 py-2 border border-dashed border-primary/50 rounded-lg hover:bg-primary-light/50 transition-colors text-sm"
-            >
-              {bottleQty > 1
-                ? `+ Add these ${bottleQty} bottles`
-                : "+ Add this bottle"}
-            </button>
+          <div className="border-t border-border-strong pt-3">
+            {addingBottle ? (
+              <div className="space-y-2">
+                <BottleFields
+                  value={bottleDraft}
+                  onChange={setBottleDraft}
+                  quantity={bottleQty}
+                  onQuantityChange={setBottleQty}
+                />
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={addBottleToList}
+                    className="btn-primary flex-1 text-sm py-1.5"
+                  >
+                    {bottleQty > 1 ? `Save ${bottleQty} bottles` : "Save"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={cancelNewBottle}
+                    className="btn-outline flex-1 text-sm py-1.5"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => openNewBottle()}
+                className="btn-outline w-full text-sm"
+              >
+                + Add New Bottle
+              </button>
+            )}
           </div>
 
-          {bottles.length === 0 && (
+          {bottles.length === 0 && !addingBottle && (
             <p className="text-xs text-text-muted">
               Add at least one bottle to track stock & spend (you can also add
               bottles later).

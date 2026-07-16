@@ -1,12 +1,13 @@
 "use client";
 
-// Shared "add a bottle" fields, used by both the Add Supplement screen and the
-// supplement detail screen so the two entry points stay identical.
+// Shared bottle form fields — matches the inline edit layout on the supplement
+// detail screen so Add and Edit stay identical.
 export interface BottleFieldsValue {
   count: number;
   price: number;
   purchaseUrl: string;
   purchasedAt: string; // yyyy-mm-dd
+  remaining: number; // pills remaining now
 }
 
 export function BottleFields({
@@ -30,29 +31,34 @@ export function BottleFields({
 
   return (
     <div className="space-y-2">
-      <div className="grid grid-cols-3 gap-2">
-        <label className="text-xs text-text-label font-semibold">
-          Count
-          <input
-            type="number"
-            min="1"
-            value={value.count || ""}
-            onChange={(e) =>
-              set({ count: Math.max(0, parseInt(e.target.value) || 0) })
-            }
-            className="w-full mt-1 px-2 py-1.5 border border-border-strong rounded-lg font-mono text-sm"
-          />
-        </label>
+      <div className="grid grid-cols-2 gap-2">
         <label className="text-xs text-text-label font-semibold">
           Price
           <input
             type="number"
             min="0"
             step="0.01"
-            value={value.price || ""}
-            onChange={(e) =>
-              set({ price: parseFloat(e.target.value) || 0 })
-            }
+            value={value.price}
+            onChange={(e) => set({ price: parseFloat(e.target.value) || 0 })}
+            className="w-full mt-1 px-2 py-1.5 border border-border-strong rounded-lg font-mono text-sm"
+          />
+        </label>
+        <label className="text-xs text-text-label font-semibold">
+          Count (capacity)
+          <input
+            type="number"
+            min="1"
+            value={value.count || ""}
+            onChange={(e) => {
+              const count = Math.max(0, parseInt(e.target.value) || 0);
+              // Keep remaining in sync when it still matches the previous capacity
+              // (typical "new full bottle" case); otherwise just clamp.
+              const remaining =
+                value.remaining === value.count
+                  ? count
+                  : Math.min(value.remaining, count || value.remaining);
+              set({ count, remaining });
+            }}
             className="w-full mt-1 px-2 py-1.5 border border-border-strong rounded-lg font-mono text-sm"
           />
         </label>
@@ -68,9 +74,24 @@ export function BottleFields({
             Future dates are incoming and will not be used until then.
           </p>
         </label>
+        <label className="text-xs text-text-label font-semibold">
+          Pills remaining now
+          <input
+            type="number"
+            min="0"
+            max={value.count || undefined}
+            value={value.remaining}
+            onChange={(e) =>
+              set({
+                remaining: Math.max(0, parseInt(e.target.value) || 0),
+              })
+            }
+            className="w-full mt-1 px-2 py-1.5 border border-border-strong rounded-lg font-mono text-sm"
+          />
+        </label>
       </div>
       <label className="text-xs text-text-label font-semibold block">
-        Purchase link (where you bought it)
+        Purchase link
         <input
           type="url"
           placeholder="https://store.com/product"

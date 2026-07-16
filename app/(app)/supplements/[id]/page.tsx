@@ -25,10 +25,11 @@ import {
   getSpendRatePerDay,
   getLifetimeSpent,
   getDosageWeekly,
+  isBottleAvailable,
   type BottleState,
 } from "@/lib/supplement-utils";
 
-// --- date <-> <input type="date"> helpers (local noon avoids tz drift) -------
+// --- date <-> <input type="date"> helpers (local midnight = start of available day)
 function toDateInput(ms: number): string {
   const d = new Date(ms);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
@@ -37,7 +38,7 @@ function toDateInput(ms: number): string {
 }
 function fromDateInput(s: string): number {
   const [y, m, d] = s.split("-").map(Number);
-  return new Date(y, m - 1, d, 12, 0, 0).getTime();
+  return new Date(y, m - 1, d, 0, 0, 0).getTime();
 }
 /** Short store label for a purchase link, e.g. "amazon.com". */
 function storeLabel(url: string): string {
@@ -114,6 +115,7 @@ export default function SupplementDetailPage() {
     price: 0,
     purchaseUrl: "",
     purchasedAt: toDateInput(Date.now()),
+    remaining: 0,
   });
   const [newBottleQty, setNewBottleQty] = useState(1);
   const [editingBottleId, setEditingBottleId] =
@@ -178,9 +180,11 @@ export default function SupplementDetailPage() {
       group.dosages ?? []
     );
     states = gl.states.filter((s) => s.bottle.supplementId === supplementId);
-    const availableStates = states.filter((s) => s.bottle.purchasedAt <= Date.now());
+    const availableStates = states.filter((s) =>
+      isBottleAvailable(s.bottle.purchasedAt)
+    );
     const incomingStates = states.filter(
-      (s) => s.bottle.purchasedAt > Date.now() && s.remaining > 0
+      (s) => !isBottleAvailable(s.bottle.purchasedAt) && s.remaining > 0
     );
     onHand = Math.round(availableStates.reduce((sum, s) => sum + s.remaining, 0));
     incomingCount = Math.round(
@@ -221,15 +225,14 @@ export default function SupplementDetailPage() {
   };
   const status = getSupplementStatus(daysLeft);
   const openState = states.find((s) => s.isOpen);
-  const now = Date.now();
   const nonEmpty = states.filter(
-    (s) => s.bottle.purchasedAt <= now && s.remaining > 0
+    (s) => isBottleAvailable(s.bottle.purchasedAt) && s.remaining > 0
   );
   const incoming = states.filter(
-    (s) => s.bottle.purchasedAt > now && s.remaining > 0
+    (s) => !isBottleAvailable(s.bottle.purchasedAt) && s.remaining > 0
   );
   const empty = states.filter(
-    (s) => s.bottle.purchasedAt <= now && s.remaining <= 0
+    (s) => isBottleAvailable(s.bottle.purchasedAt) && s.remaining <= 0
   );
 
   // Distinct purchase links across all bottles, newest purchase first.
@@ -340,6 +343,7 @@ export default function SupplementDetailPage() {
         price: newBottle.price,
         purchaseUrl: newBottle.purchaseUrl || undefined,
         purchasedAt: fromDateInput(newBottle.purchasedAt),
+        remaining: Math.max(0, Math.min(newBottle.remaining, newBottle.count)),
         qty: newBottleQty,
       });
       setAddingBottle(false);
@@ -348,6 +352,7 @@ export default function SupplementDetailPage() {
         price: 0,
         purchaseUrl: "",
         purchasedAt: toDateInput(Date.now()),
+        remaining: supplement.jarSize,
       });
       setNewBottleQty(1);
     } catch (err) {
@@ -390,6 +395,7 @@ export default function SupplementDetailPage() {
       price: bottle.price,
       purchaseUrl: bottle.purchaseUrl ?? "",
       purchasedAt: toDateInput(Date.now()),
+      remaining: bottle.count,
     });
     setNewBottleQty(1);
     setAddingBottle(true);
@@ -1122,10 +1128,10 @@ export default function SupplementDetailPage() {
                   className="btn-primary flex-1 text-sm py-1.5 disabled:opacity-50"
                 >
                   {saving
-                    ? "Adding..."
+                    ? "Saving..."
                     : newBottleQty > 1
-                      ? `Add ${newBottleQty} bottles`
-                      : "Add bottle"}
+                      ? `Save ${newBottleQty} bottles`
+                      : "Save"}
                 </button>
                 <button
                   onClick={() => setAddingBottle(false)}
@@ -1143,13 +1149,14 @@ export default function SupplementDetailPage() {
                   price: 0,
                   purchaseUrl: "",
                   purchasedAt: toDateInput(Date.now()),
+                  remaining: supplement.jarSize,
                 });
                 setNewBottleQty(1);
                 setAddingBottle(true);
               }}
-              className="w-full text-left px-3 py-2 border border-dashed border-primary/50 rounded-lg hover:bg-primary-light/50 transition-colors text-sm"
+              className="btn-outline w-full text-sm"
             >
-              + Add bottle
+              + Add New Bottle
             </button>
           )}
         </div>

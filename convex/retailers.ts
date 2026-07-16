@@ -110,6 +110,30 @@ export async function upsertSavedLink(
   }
 }
 
+/** Case-insensitive name clash within a household (exclude self when renaming). */
+async function findDuplicateRetailerName(
+  ctx: MutationCtx,
+  householdId: Id<"households">,
+  name: string,
+  excludeId?: Id<"retailers">
+) {
+  const retailers = await ctx.db
+    .query("retailers")
+    .withIndex("by_household", (q) => q.eq("householdId", householdId))
+    .collect();
+  const key = name.trim().toLowerCase();
+  return (
+    retailers.find(
+      (r) => r._id !== excludeId && r.name.trim().toLowerCase() === key
+    ) ?? null
+  );
+}
+
+const saveResult = v.union(
+  v.object({ ok: v.literal(true) }),
+  v.object({ ok: v.literal(false), error: v.string() })
+);
+
 export const list = query({
   args: { householdId: v.id("households") },
   returns: v.array(
@@ -141,7 +165,7 @@ export const create = mutation({
     freeShippingThreshold: v.optional(v.number()),
     standardShippingCost: v.optional(v.number()),
   },
-  returns: v.id("retailers"),
+  returns: saveResult,
   async handler(ctx, {
     householdId,
     name,
@@ -151,8 +175,15 @@ export const create = mutation({
   }) {
     await requireMembership(ctx, householdId);
     const trimmed = name.trim();
-    if (!trimmed) throw new Error("Retailer name is required.");
-    return await ctx.db.insert("retailers", {
+    if (!trimmed) return { ok: false as const, error: "Retailer name is required." };
+    const clash = await findDuplicateRetailerName(ctx, householdId, trimmed);
+    if (clash) {
+      return {
+        ok: false as const,
+        error: `You already have a retailer named "${clash.name}".`,
+      };
+    }
+    await ctx.db.insert("retailers", {
       householdId,
       name: trimmed,
       baseUrl: baseUrl?.trim() || undefined,
@@ -166,6 +197,7 @@ export const create = mutation({
           : undefined,
       createdAt: Date.now(),
     });
+    return { ok: true as const };
   },
 });
 
@@ -179,7 +211,7 @@ export const update = mutation({
     // null clears standard shipping ("we don't know" ≠ $0).
     standardShippingCost: v.optional(v.union(v.number(), v.null())),
   },
-  returns: v.null(),
+  returns: saveResult,
   async handler(ctx, {
     id,
     name,
@@ -187,9 +219,24 @@ export const update = mutation({
     freeShippingThreshold,
     standardShippingCost,
   }) {
-    await requireRetailerAccess(ctx, id);
+    const retailer = await requireRetailerAccess(ctx, id);
     const patch: Record<string, string | number | undefined> = {};
-    if (name !== undefined && name.trim()) patch.name = name.trim();
+    if (name !== undefined && name.trim()) {
+      const trimmed = name.trim();
+      const clash = await findDuplicateRetailerName(
+        ctx,
+        retailer.householdId,
+        trimmed,
+        id
+      );
+      if (clash) {
+        return {
+          ok: false as const,
+          error: `You already have a retailer named "${clash.name}".`,
+        };
+      }
+      patch.name = trimmed;
+    }
     if (baseUrl !== undefined) patch.baseUrl = baseUrl.trim() || undefined;
     if (freeShippingThreshold !== undefined) {
       patch.freeShippingThreshold =
@@ -204,6 +251,6 @@ export const update = mutation({
           : undefined;
     }
     await ctx.db.patch(id, patch);
-    return null;
+    return { ok: true as const };
   },
 });

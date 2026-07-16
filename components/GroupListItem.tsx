@@ -12,6 +12,7 @@ import {
   getDaysLeft,
   getSupplementStatus,
   getSpendRatePerDay,
+  isBottleAvailable,
   type BottleLike,
 } from "@/lib/supplement-utils";
 
@@ -70,14 +71,13 @@ export function GroupListItem({
   const daysLeft = getDaysLeft(ledger.onHand, rate);
   const status = getSupplementStatus(daysLeft);
   const monthlySpend = getSpendRatePerDay(rate, ledger.openCostPerPill) * 30;
-  const now = Date.now();
 
   // Per-member remaining (Σ its bottles) + queue order (earliest bottle first).
   const remainingByMember = new Map<string, number>();
   const incomingByMember = new Map<string, number>();
   for (const s of ledger.states) {
     const id = s.bottle.supplementId;
-    if (s.bottle.purchasedAt <= now) {
+    if (isBottleAvailable(s.bottle.purchasedAt)) {
       remainingByMember.set(id, (remainingByMember.get(id) ?? 0) + s.remaining);
     } else {
       incomingByMember.set(id, (incomingByMember.get(id) ?? 0) + s.remaining);

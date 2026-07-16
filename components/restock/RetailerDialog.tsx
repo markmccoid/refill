@@ -39,45 +39,51 @@ export function RetailerDialog({
     retailer?.standardShippingCost?.toString() ?? ""
   );
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
 
   const submit = async () => {
     if (!name.trim() || busy) return;
     setBusy(true);
+    setError("");
     try {
       const thresholdNum = parseFloat(threshold);
       const standardShippingCostNum = parseFloat(standardShippingCost);
-      if (retailer) {
-        await update({
-          id: retailer._id,
-          name: name.trim(),
-          baseUrl: baseUrl,
-          freeShippingThreshold:
-            !Number.isNaN(thresholdNum) && thresholdNum > 0
-              ? thresholdNum
-              : null,
-          standardShippingCost:
-            !Number.isNaN(standardShippingCostNum) &&
-            standardShippingCostNum > 0
-              ? standardShippingCostNum
-              : null,
-        });
-      } else {
-        await create({
-          householdId,
-          name: name.trim(),
-          baseUrl: baseUrl.trim() || undefined,
-          freeShippingThreshold:
-            !Number.isNaN(thresholdNum) && thresholdNum > 0
-              ? thresholdNum
-              : undefined,
-          standardShippingCost:
-            !Number.isNaN(standardShippingCostNum) &&
-            standardShippingCostNum > 0
-              ? standardShippingCostNum
-              : undefined,
-        });
+      const result = retailer
+        ? await update({
+            id: retailer._id,
+            name: name.trim(),
+            baseUrl: baseUrl,
+            freeShippingThreshold:
+              !Number.isNaN(thresholdNum) && thresholdNum > 0
+                ? thresholdNum
+                : null,
+            standardShippingCost:
+              !Number.isNaN(standardShippingCostNum) &&
+              standardShippingCostNum > 0
+                ? standardShippingCostNum
+                : null,
+          })
+        : await create({
+            householdId,
+            name: name.trim(),
+            baseUrl: baseUrl.trim() || undefined,
+            freeShippingThreshold:
+              !Number.isNaN(thresholdNum) && thresholdNum > 0
+                ? thresholdNum
+                : undefined,
+            standardShippingCost:
+              !Number.isNaN(standardShippingCostNum) &&
+              standardShippingCostNum > 0
+                ? standardShippingCostNum
+                : undefined,
+          });
+      if (!result.ok) {
+        setError(result.error);
+        return;
       }
       onClose();
+    } catch {
+      setError("Could not save retailer.");
     } finally {
       setBusy(false);
     }
@@ -96,7 +102,10 @@ export function RetailerDialog({
             <input
               type="text"
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => {
+                setName(e.target.value);
+                if (error) setError("");
+              }}
               placeholder="e.g. iHerb"
               autoFocus
               className="mt-1 w-full px-3 py-2 text-sm border border-border-strong rounded-lg bg-surface"
@@ -149,6 +158,15 @@ export function RetailerDialog({
             </span>
           </label>
         </div>
+
+        {error ? (
+          <div
+            className="rounded-lg border border-critical/25 bg-critical-light px-3 py-2 text-sm text-critical"
+            role="alert"
+          >
+            {error}
+          </div>
+        ) : null}
 
         <div className="flex justify-end gap-2 pt-1">
           <button
