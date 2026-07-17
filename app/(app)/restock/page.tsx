@@ -619,9 +619,9 @@ function BasketCard({
             {money(basket.gapToFreeShipping)} to free shipping (
             {money(basket.freeShippingThreshold!)})
           </p>
-          <div className="mt-1 h-1.5 bg-text/10 rounded-full overflow-hidden">
+          <div className="mt-1 supply-track">
             <div
-              className="h-full bg-low rounded-full"
+              className="supply-fill bg-low"
               style={{
                 width: `${Math.min(
                   100,

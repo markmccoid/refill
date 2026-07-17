@@ -1,24 +1,41 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useHousehold } from "@/hooks/useHousehold";
-import { ImageUploader } from "@/components/ImageUploader";
 import {
   DsldFindDetails,
   type DsldLabel,
   type DsldFindDetailsHandle,
 } from "@/components/DsldFindDetails";
-import { DosageInput } from "@/components/DosageInput";
 import { BottleFields, type BottleFieldsValue } from "@/components/BottleFields";
 import { FactsView } from "@/components/FactsView";
 import {
   FactsEditorModal,
   type FactsSavePayload,
 } from "@/components/FactsEditorModal";
-import Link from "next/link";
+import { SupplementAppearancePicker } from "@/components/SupplementAppearancePicker";
+import { WizardStepIndicator } from "@/components/add-supplement/WizardStepIndicator";
+import { WizardFooter } from "@/components/add-supplement/WizardFooter";
+import {
+  BottleCard,
+  SummaryRail,
+} from "@/components/add-supplement/BottleCard";
+import {
+  GroupQuestionCard,
+  type GroupChoice,
+  type GroupSelectValue,
+} from "@/components/add-supplement/GroupQuestionCard";
+import { PersonDosageCard } from "@/components/add-supplement/PersonDosageCard";
+import {
+  emptyBottleDraft,
+  fromDateInput,
+  resolveJarSize,
+} from "@/lib/add-supplement-utils";
+import { suggestGroup } from "@/lib/group-suggest";
 import { Id } from "@/convex/_generated/dataModel";
 
 interface Nutrient {
@@ -32,52 +49,49 @@ interface DosageAssignment {
   pillsPerWeek: number;
 }
 
-function toDateInput(ms: number): string {
-  const d = new Date(ms);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
-    d.getDate()
-  ).padStart(2, "0")}`;
-}
-function fromDateInput(s: string): number {
-  const [y, m, d] = s.split("-").map(Number);
-  return new Date(y, m - 1, d, 0, 0, 0).getTime();
-}
-function storeLabel(url: string): string {
-  try {
-    return new URL(url).hostname.replace(/^www\./, "");
-  } catch {
-    return url;
-  }
-}
-
-const emptyBottleDraft = (count: number): BottleFieldsValue => ({
-  count,
-  price: 0,
-  purchaseUrl: "",
-  purchasedAt: toDateInput(Date.now()),
-  remaining: count,
-});
-
 export default function AddSupplementPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="max-w-[860px] pb-28">
+          <h1 className="text-2xl font-bold tracking-tight">Add a supplement</h1>
+          <p className="text-text-muted text-sm mt-1">Loading…</p>
+        </div>
+      }
+    >
+      <AddSupplementWizard />
+    </Suspense>
+  );
+}
+
+function AddSupplementWizard() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const queryGroupId = searchParams.get("groupId") as Id<"groups"> | null;
+
   const householdId = useHousehold();
   const people = useQuery(
     api.people.list,
     householdId ? { householdId } : "skip"
   );
+  const groups = useQuery(
+    api.groups.list,
+    householdId ? { householdId } : "skip"
+  );
+
   const createSupplement = useMutation(api.supplements.create);
   const createDosage = useMutation(api.dosages.create);
   const importFacts = useAction(api.dsld.importFacts);
   const saveFacts = useMutation(api.supplementFacts.save);
 
+  const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  // Facts staged for submit: the picked DSLD label (full parsed label so we
-  // can preview it before save), or a hand-entered draft. Mutually exclusive —
-  // a supplement has one facts record.
   const [pendingLabel, setPendingLabel] = useState<DsldLabel | null>(null);
-  const [manualFacts, setManualFacts] = useState<FactsSavePayload | null>(null);
+  const [manualFacts, setManualFacts] = useState<FactsSavePayload | null>(
+    null
+  );
   const [factsEditorOpen, setFactsEditorOpen] = useState(false);
 
   const [formData, setFormData] = useState({
@@ -89,9 +103,9 @@ export default function AddSupplementPage() {
     nutrients: [] as Nutrient[],
     jarSize: 120,
     imageUrl: "",
+    iconId: "" as string,
   });
 
-  // Bottles added so far, plus the in-progress draft (shown only when adding).
   const [bottles, setBottles] = useState<BottleFieldsValue[]>([]);
   const [addingBottle, setAddingBottle] = useState(false);
   const [bottleDraft, setBottleDraft] = useState<BottleFieldsValue>(
@@ -101,7 +115,40 @@ export default function AddSupplementPage() {
 
   const [dosages, setDosages] = useState<DosageAssignment[]>([]);
 
+  const [groupChoice, setGroupChoice] = useState<GroupChoice>("solo");
+  const [selectedGroupId, setSelectedGroupId] =
+    useState<GroupSelectValue | null>(null);
+  const [newGroupName, setNewGroupName] = useState("");
+  const [urlGroupApplied, setUrlGroupApplied] = useState(false);
+
   const findDetailsRef = useRef<DsldFindDetailsHandle>(null);
+
+  const joinExisting =
+    groupChoice === "group" &&
+    selectedGroupId !== null &&
+    selectedGroupId !== "new";
+  const startingNewGroup =
+    groupChoice === "group" && selectedGroupId === "new";
+  const maxStep = joinExisting ? 2 : 3;
+
+  const selectedGroup = groups?.find((g) => g._id === selectedGroupId);
+
+  useEffect(() => {
+    if (urlGroupApplied || !queryGroupId || !groups) return;
+    const exists = groups.some((g) => g._id === queryGroupId);
+    if (exists) {
+      setGroupChoice("group");
+      setSelectedGroupId(queryGroupId);
+      setUrlGroupApplied(true);
+    }
+  }, [queryGroupId, groups, urlGroupApplied]);
+
+  useEffect(() => {
+    if (groupChoice === "group" && selectedGroupId === "new" && !newGroupName) {
+      const base = formData.name.trim();
+      if (base) setNewGroupName(base.split(/\s+/).slice(0, 3).join(" "));
+    }
+  }, [groupChoice, selectedGroupId, formData.name, newGroupName]);
 
   function applyDsldLabel(label: DsldLabel) {
     setPendingLabel(label);
@@ -149,26 +196,79 @@ export default function AddSupplementPage() {
       ...bottleDraft,
       remaining: Math.max(0, Math.min(bottleDraft.remaining, bottleDraft.count)),
     };
-    // qty > 1 = several identical bottles from one order; each is its own row.
     setBottles([...bottles, ...Array(bottleQty).fill(entry)]);
+    if (!pendingLabel?.jarSizeSuggestion && bottles.length === 0) {
+      setFormData((prev) => ({ ...prev, jarSize: entry.count }));
+    }
     setAddingBottle(false);
     setBottleDraft(emptyBottleDraft(formData.jarSize));
     setBottleQty(1);
     setError("");
   }
 
-  async function handleSave(e: React.FormEvent) {
-    e.preventDefault();
+  function validateStep1(): boolean {
+    if (!formData.name.trim()) {
+      setError("Supplement name is required");
+      return false;
+    }
+    if (groupChoice === "group") {
+      if (!selectedGroupId) {
+        setError("Select a group or start a new one");
+        return false;
+      }
+      if (selectedGroupId === "new" && !newGroupName.trim()) {
+        setError("New group name is required");
+        return false;
+      }
+    }
+    setError("");
+    return true;
+  }
+
+  function goToStep(next: number) {
+    if (next < 1) return;
+    if (next > maxStep) return;
+    if (next > step && step === 1 && !validateStep1()) return;
+    setStep(next);
+    window.scrollTo(0, 0);
+  }
+
+  function handleContinue() {
+    if (step === 1) {
+      if (!validateStep1()) return;
+      setStep(2);
+      window.scrollTo(0, 0);
+      return;
+    }
+    if (step === 2) {
+      if (joinExisting) {
+        void handleSave();
+      } else {
+        setStep(3);
+        window.scrollTo(0, 0);
+      }
+      return;
+    }
+    void handleSave();
+  }
+
+  async function handleSave() {
     if (!householdId) {
       setError("Household not initialized");
       return;
     }
-    if (!formData.name.trim()) {
-      setError("Supplement name is required");
+    if (!validateStep1()) {
+      setStep(1);
       return;
     }
-    if (formData.jarSize <= 0) {
-      setError("Default bottle size must be greater than 0");
+
+    const jarSize = resolveJarSize(
+      pendingLabel?.jarSizeSuggestion,
+      bottles,
+      formData.jarSize
+    );
+    if (jarSize <= 0) {
+      setError("Bottle size must be greater than 0");
       return;
     }
 
@@ -176,16 +276,17 @@ export default function AddSupplementPage() {
     setError("");
 
     try {
-      const supplementId = await createSupplement({
+      const baseArgs = {
         householdId,
-        name: formData.name,
+        name: formData.name.trim(),
         brand: formData.brand || undefined,
         form: formData.form || undefined,
         servingSize: formData.servingSize || undefined,
         category: formData.category || undefined,
         nutrients: formData.nutrients.length ? formData.nutrients : undefined,
-        jarSize: formData.jarSize,
+        jarSize,
         imageUrl: formData.imageUrl || undefined,
+        iconId: formData.iconId || undefined,
         bottles: bottles.map((b) => ({
           count: b.count,
           price: b.price,
@@ -193,19 +294,41 @@ export default function AddSupplementPage() {
           purchasedAt: fromDateInput(b.purchasedAt),
           remaining: Math.max(0, Math.min(b.remaining, b.count)),
         })),
-      });
+      };
 
-      for (const dosage of dosages) {
-        await createDosage({
-          supplementId,
-          personId: dosage.personId,
-          pillsPerWeek: dosage.pillsPerWeek,
+      let supplementId: Id<"supplements">;
+
+      if (joinExisting && selectedGroupId && selectedGroupId !== "new") {
+        supplementId = await createSupplement({
+          ...baseArgs,
+          groupId: selectedGroupId,
         });
+      } else if (startingNewGroup) {
+        supplementId = await createSupplement({
+          ...baseArgs,
+          newGroup: {
+            name: newGroupName.trim(),
+            category: formData.category || undefined,
+            dosages,
+          },
+        });
+      } else {
+        supplementId = await createSupplement(baseArgs);
+        for (const dosage of dosages) {
+          await createDosage({
+            supplementId,
+            personId: dosage.personId,
+            pillsPerWeek: dosage.pillsPerWeek,
+          });
+        }
       }
 
       if (pendingLabel) {
         try {
-          await importFacts({ supplementId, dsldId: pendingLabel.dsldId });
+          await importFacts({
+            supplementId,
+            dsldId: pendingLabel.dsldId,
+          });
         } catch (err) {
           console.error("Failed to import DSLD facts:", err);
         }
@@ -226,26 +349,65 @@ export default function AddSupplementPage() {
     }
   }
 
+  const activePeople =
+    people?.filter((p) => p.status !== "disabled") ?? [];
+
+  const dosageLines = joinExisting
+    ? (selectedGroup?.takers ?? []).map((t) => ({
+        _id: t.personId,
+        name:
+          activePeople.find((p) => p._id === t.personId)?.name ?? "Someone",
+        pillsPerWeek: t.pillsPerWeek,
+      }))
+    : dosages.map((d) => ({
+        _id: d.personId,
+        name:
+          activePeople.find((p) => p._id === d.personId)?.name ?? "Someone",
+        pillsPerWeek: d.pillsPerWeek,
+      }));
+
+  const railGroupName = joinExisting
+    ? selectedGroup?.name
+    : startingNewGroup
+      ? newGroupName.trim() || formData.name.trim()
+      : undefined;
+
   return (
-    <div className="space-y-6 max-w-2xl">
-      <div>
-        <h1 className="text-2xl font-bold">Add a supplement</h1>
-        <p className="text-text-muted text-sm mt-1">
-          Enter the supplement details, then add your bottles.
-        </p>
+    <div className="max-w-[860px] pb-28">
+      <div className="mb-2 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Add a supplement</h1>
+          <p className="text-text-muted text-sm mt-1">
+            A <b className="text-text font-semibold">supplement</b> is one
+            product you take. The{" "}
+            <b className="text-text font-semibold">bottles</b> are the physical
+            jars of it you own.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => router.push("/supplements")}
+          className="text-sm text-text-muted hover:text-text flex-shrink-0 mt-1"
+        >
+          Cancel
+        </button>
       </div>
 
       {error && (
-        <div className="bg-critical-light border border-critical/25 text-critical px-4 py-3 rounded-lg text-sm">
+        <div className="bg-critical-light border border-critical/25 text-critical px-4 py-3 rounded-lg text-sm mb-4">
           {error}
         </div>
       )}
 
+      <WizardStepIndicator
+        current={step}
+        maxStep={maxStep}
+        onGoTo={goToStep}
+      />
+
       <form
-        onSubmit={handleSave}
+        onSubmit={(e) => e.preventDefault()}
         onKeyDown={(e) => {
-          // Enter in any field must not save; only the Save button submits.
-          // (Buttons stay clickable via Enter — their default is a click.)
           const target = e.target as HTMLElement;
           if (
             e.key === "Enter" &&
@@ -255,347 +417,365 @@ export default function AddSupplementPage() {
             e.preventDefault();
           }
         }}
-        className="space-y-4"
       >
-        {/* Identity */}
-        <div>
-          <label className="text-xs font-semibold text-text-label">
-            Supplement name *
-          </label>
-          <div className="flex gap-2 mt-1">
-            <input
-              type="text"
-              placeholder="e.g., Omega-3 Fish Oil"
-              value={formData.name}
-              onChange={(e) => {
-                setFormData({ ...formData, name: e.target.value });
-                setError("");
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  findDetailsRef.current?.open();
-                }
-              }}
-              className="flex-1 px-4 py-2 border border-border-strong rounded-lg font-medium text-sm"
-            />
-            <DsldFindDetails
-              ref={findDetailsRef}
-              initialQuery={formData.name}
-              onApply={applyDsldLabel}
-              onManualEntry={() => setFactsEditorOpen(true)}
-            />
-          </div>
-          <p className="text-xs text-text-muted mt-1">
-            Type a name, then{" "}
-            <span className="font-medium">Find Details</span> to pull the
-            official label & facts from the NIH database
-            {!pendingLabel && !manualFacts ? (
-              <>
-                , or{" "}
-                <button
-                  type="button"
-                  onClick={() => setFactsEditorOpen(true)}
-                  className="text-primary hover:underline"
-                >
-                  enter the facts manually
-                </button>
-                .
-              </>
-            ) : (
-              "."
-            )}
-          </p>
-        </div>
-
-        {pendingLabel && (
-          <div className="bg-primary-light border border-primary/30 rounded-lg px-4 py-3 text-sm flex items-start justify-between gap-3">
-            <div>
-              <span className="font-semibold text-primary">
-                ✓ Linked to DSLD #{pendingLabel.dsldId}
-              </span>
-              <p className="text-text-muted text-xs mt-0.5">
-                {[formData.brand, formData.form, formData.servingSize]
-                  .filter(Boolean)
-                  .join(" · ")}
-                {" — supplement facts & label image will be saved."}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setPendingLabel(null)}
-              className="text-xs text-text-muted hover:text-critical flex-shrink-0"
-            >
-              Unlink
-            </button>
-          </div>
-        )}
-
-        {manualFacts && (
-          <div className="bg-primary-light border border-primary/30 rounded-lg px-4 py-3 text-sm flex items-start justify-between gap-3">
-            <span className="font-semibold text-primary">
-              ✓ Facts entered manually — will be saved with the supplement.
-            </span>
-            <div className="flex gap-3 flex-shrink-0 text-xs">
-              <button
-                type="button"
-                onClick={() => setFactsEditorOpen(true)}
-                className="text-primary hover:underline"
-              >
-                Edit
-              </button>
-              <button
-                type="button"
-                onClick={() => setManualFacts(null)}
-                className="text-text-muted hover:text-critical"
-              >
-                Remove
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Preview the staged facts (DSLD pick or manual entry) before save. */}
-        {(pendingLabel || manualFacts) && (
-          <div className="border border-border-strong rounded-lg p-4 max-h-80 overflow-auto">
-            <h3 className="text-sm font-semibold mb-3">
-              Supplement Facts preview
-            </h3>
-            <FactsView
-              facts={
-                pendingLabel
-                  ? {
-                      servingSize: pendingLabel.servingSize,
-                      servingsPerContainer: pendingLabel.servingsPerContainer,
-                      rows: pendingLabel.rows,
-                      otherIngredients: pendingLabel.otherIngredients,
-                      offMarket: pendingLabel.offMarket,
-                      thumbnailUrl: pendingLabel.thumbnailUrl,
-                      dsldId: pendingLabel.dsldId,
-                    }
-                  : manualFacts!
-              }
-            />
-          </div>
-        )}
-
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-[1fr_250px] gap-6 items-start">
           <div>
-            <label className="text-xs font-semibold text-text-label">
-              Brand
-            </label>
-            <input
-              type="text"
-              placeholder="e.g., Thorne"
-              value={formData.brand}
-              onChange={(e) =>
-                setFormData({ ...formData, brand: e.target.value })
-              }
-              className="w-full mt-1 px-4 py-2 border border-border-strong rounded-lg text-sm"
-            />
-          </div>
-          <div>
-            <label className="text-xs font-semibold text-text-label">
-              Form
-            </label>
-            <input
-              type="text"
-              placeholder="e.g., Softgel"
-              value={formData.form}
-              onChange={(e) =>
-                setFormData({ ...formData, form: e.target.value })
-              }
-              className="w-full mt-1 px-4 py-2 border border-border-strong rounded-lg text-sm"
-            />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="text-xs font-semibold text-text-label">
-              Serving size
-            </label>
-            <input
-              type="text"
-              placeholder="e.g., 1 softgel"
-              value={formData.servingSize}
-              onChange={(e) =>
-                setFormData({ ...formData, servingSize: e.target.value })
-              }
-              className="w-full mt-1 px-4 py-2 border border-border-strong rounded-lg text-sm"
-            />
-          </div>
-          <div>
-            <label className="text-xs font-semibold text-text-label">
-              Default bottle size (pills)
-            </label>
-            <input
-              type="number"
-              min={1}
-              value={formData.jarSize || ""}
-              onChange={(e) => {
-                const jarSize = Math.max(0, parseInt(e.target.value) || 0);
-                setFormData({ ...formData, jarSize });
-                setBottleDraft((prev) => ({
-                  ...prev,
-                  count: jarSize,
-                  remaining:
-                    prev.remaining === prev.count
-                      ? jarSize
-                      : Math.min(prev.remaining, jarSize),
-                }));
-              }}
-              className="w-full mt-1 px-4 py-2 border border-border-strong rounded-lg font-mono text-sm"
-            />
-          </div>
-        </div>
-
-        <ImageUploader
-          imageUrl={formData.imageUrl}
-          onImageChange={(url) => setFormData({ ...formData, imageUrl: url })}
-        />
-
-        {/* Bottles */}
-        <div className="border border-border-strong rounded-lg p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold">Bottles</h3>
-            <span className="text-xs text-text-muted">
-              {bottles.length} added
-            </span>
-          </div>
-
-          {bottles.length > 0 && (
-            <div className="space-y-1">
-              {bottles.map((b, idx) => (
-                <div
-                  key={idx}
-                  className="flex items-center gap-3 text-sm border border-border-strong rounded-lg px-3 py-2"
-                >
-                  <span className="font-mono">{b.count} ct</span>
-                  <span className="font-mono">${b.price.toFixed(2)}</span>
-                  {b.purchaseUrl && (
-                    <span className="text-xs text-text-muted truncate">
-                      {storeLabel(b.purchaseUrl)}
+            {step === 1 && (
+              <div className="space-y-4">
+                <div>
+                  <label className="text-xs font-bold text-text-label block mb-1">
+                    Search or name the supplement
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-faint text-sm pointer-events-none">
+                      ⌕
                     </span>
-                  )}
-                  <span className="text-xs text-text-muted ml-auto">
-                    {b.purchasedAt}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => openNewBottle({ ...b })}
-                    className="text-xs text-primary hover:underline"
-                  >
-                    Copy
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setBottles(bottles.filter((_, i) => i !== idx))
-                    }
-                    className="text-xs text-critical hover:underline"
-                  >
-                    Remove
-                  </button>
+                    <input
+                      type="text"
+                      placeholder="e.g., Omega-3 Fish Oil"
+                      value={formData.name}
+                      onChange={(e) => {
+                        setFormData({ ...formData, name: e.target.value });
+                        setError("");
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          findDetailsRef.current?.open();
+                        }
+                      }}
+                      className="w-full pl-9 pr-3 py-3 border border-border-strong rounded-lg text-[15px] font-medium"
+                    />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 mt-2">
+                    <DsldFindDetails
+                      ref={findDetailsRef}
+                      initialQuery={formData.name}
+                      onApply={applyDsldLabel}
+                      buttonLabel="Find in DSLD"
+                      onManualEntry={() => setFactsEditorOpen(true)}
+                    />
+                    {!pendingLabel && !manualFacts && (
+                      <button
+                        type="button"
+                        onClick={() => setFactsEditorOpen(true)}
+                        className="text-sm text-primary font-semibold hover:underline"
+                      >
+                        Enter the label facts manually
+                      </button>
+                    )}
+                  </div>
                 </div>
-              ))}
-            </div>
-          )}
 
-          <div className="border-t border-border-strong pt-3">
-            {addingBottle ? (
-              <div className="space-y-2">
-                <BottleFields
-                  value={bottleDraft}
-                  onChange={setBottleDraft}
-                  quantity={bottleQty}
-                  onQuantityChange={setBottleQty}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  <div>
+                    <label className="text-xs font-bold text-text-label block mb-1">
+                      Brand
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g., Thorne"
+                      value={formData.brand}
+                      onChange={(e) =>
+                        setFormData({ ...formData, brand: e.target.value })
+                      }
+                      className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-text-label block mb-1">
+                      Form
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g., Softgel"
+                      value={formData.form}
+                      onChange={(e) =>
+                        setFormData({ ...formData, form: e.target.value })
+                      }
+                      className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm"
+                    />
+                  </div>
+                </div>
+
+                <SupplementAppearancePicker
+                  iconId={formData.iconId || undefined}
+                  imageUrl={formData.imageUrl || undefined}
+                  name={formData.name || "Supplement"}
+                  onChange={({ iconId, imageUrl }) =>
+                    setFormData({
+                      ...formData,
+                      iconId: iconId ?? "",
+                      imageUrl: imageUrl ?? "",
+                    })
+                  }
                 />
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={addBottleToList}
-                    className="btn-primary flex-1 text-sm py-1.5"
-                  >
-                    {bottleQty > 1 ? `Save ${bottleQty} bottles` : "Save"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={cancelNewBottle}
-                    className="btn-outline flex-1 text-sm py-1.5"
-                  >
-                    Cancel
-                  </button>
+
+                <GroupQuestionCard
+                  choice={groupChoice}
+                  onChoiceChange={(c) => {
+                    setGroupChoice(c);
+                    if (c === "solo") {
+                      setSelectedGroupId(null);
+                      return;
+                    }
+                    if (selectedGroupId) return;
+                    if (
+                      queryGroupId &&
+                      groups?.some((g) => g._id === queryGroupId)
+                    ) {
+                      setSelectedGroupId(queryGroupId);
+                      return;
+                    }
+                    const suggested = groups?.length
+                      ? suggestGroup(
+                          formData.name,
+                          groups.map((g) => ({
+                            _id: g._id,
+                            name: g.name,
+                            members: g.members.map((m) => ({
+                              name: m.supplement.name,
+                              brand: m.supplement.brand,
+                            })),
+                          }))
+                        )
+                      : null;
+                    if (suggested) {
+                      setSelectedGroupId(suggested._id as Id<"groups">);
+                    } else if (!groups?.length) {
+                      setSelectedGroupId("new");
+                    }
+                  }}
+                  groups={groups ?? []}
+                  people={activePeople}
+                  selectedGroupId={selectedGroupId}
+                  onSelectGroup={setSelectedGroupId}
+                  newGroupName={newGroupName}
+                  onNewGroupNameChange={setNewGroupName}
+                  supplementName={formData.name}
+                  suggestedGroupId={queryGroupId}
+                />
+
+                {/* DSLD / manual facts sit at the bottom so identity fields stay primary. */}
+                {(pendingLabel || manualFacts) && (
+                  <div className="space-y-3 pt-2 border-t border-border-strong">
+                    <h3 className="text-sm font-bold">Label details</h3>
+
+                    {pendingLabel && (
+                      <div className="bg-primary-light border border-primary/30 rounded-lg px-3.5 py-2.5 text-sm flex items-start gap-2.5">
+                        <span className="text-base">🏷️</span>
+                        <div className="flex-1 min-w-0">
+                          <span className="font-semibold text-primary">
+                            Label linked.
+                          </span>{" "}
+                          <span className="text-text-muted">
+                            Brand, form, serving size and the full Supplement
+                            Facts panel were filled in from the NIH database
+                            (DSLD #{pendingLabel.dsldId}).
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setPendingLabel(null)}
+                          className="text-xs text-text-muted hover:text-critical flex-shrink-0"
+                        >
+                          Unlink
+                        </button>
+                      </div>
+                    )}
+
+                    {manualFacts && (
+                      <div className="bg-primary-light border border-primary/30 rounded-lg px-3.5 py-2.5 text-sm flex items-start justify-between gap-3">
+                        <span className="font-semibold text-primary">
+                          ✓ Facts entered manually — will be saved with the
+                          supplement.
+                        </span>
+                        <div className="flex gap-3 flex-shrink-0 text-xs">
+                          <button
+                            type="button"
+                            onClick={() => setFactsEditorOpen(true)}
+                            className="text-primary hover:underline"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setManualFacts(null)}
+                            className="text-text-muted hover:text-critical"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="border border-border-strong rounded-lg p-4 max-h-80 overflow-auto bg-surface">
+                      <h4 className="text-sm font-semibold mb-3">
+                        Supplement Facts preview
+                      </h4>
+                      <FactsView
+                        facts={
+                          pendingLabel
+                            ? {
+                                servingSize: pendingLabel.servingSize,
+                                servingsPerContainer:
+                                  pendingLabel.servingsPerContainer,
+                                rows: pendingLabel.rows,
+                                otherIngredients:
+                                  pendingLabel.otherIngredients,
+                                offMarket: pendingLabel.offMarket,
+                                thumbnailUrl: pendingLabel.thumbnailUrl,
+                                dsldId: pendingLabel.dsldId,
+                              }
+                            : manualFacts!
+                        }
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {step === 2 && (
+              <div>
+                <h3 className="text-[15px] font-bold mb-1">
+                  Bottles of {formData.name.trim() || "this supplement"} you
+                  own
+                </h3>
+                <p className="text-[13px] text-text-muted mb-3.5">
+                  Each card is one physical jar. Refill drains the oldest first
+                  and forecasts when you&apos;ll run out.
+                </p>
+
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-3">
+                  {bottles.map((b, idx) => (
+                    <BottleCard
+                      key={idx}
+                      bottle={b}
+                      onRemove={() =>
+                        setBottles(bottles.filter((_, i) => i !== idx))
+                      }
+                    />
+                  ))}
+
+                  {addingBottle ? (
+                    <div className="col-span-full border border-border-strong rounded-xl p-4 bg-surface space-y-3">
+                      <BottleFields
+                        value={bottleDraft}
+                        onChange={setBottleDraft}
+                        quantity={bottleQty}
+                        onQuantityChange={setBottleQty}
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={addBottleToList}
+                          className="btn-primary flex-1 text-sm"
+                        >
+                          {bottleQty > 1
+                            ? `Add ${bottleQty} bottles`
+                            : "Add bottle"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={cancelNewBottle}
+                          className="btn-outline flex-1 text-sm"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                      {bottles.length > 0 && (
+                        <p className="text-xs text-text-muted">
+                          Or{" "}
+                          <button
+                            type="button"
+                            className="text-primary font-semibold hover:underline"
+                            onClick={() => openNewBottle({ ...bottles[0] })}
+                          >
+                            duplicate an existing bottle
+                          </button>
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => openNewBottle()}
+                      className="border-[1.5px] border-dashed border-border-strong rounded-xl min-h-[148px] flex flex-col items-center justify-center gap-1.5 text-text-muted font-semibold text-[13.5px] hover:border-primary hover:text-primary hover:bg-primary-light transition-colors"
+                    >
+                      <span className="text-[22px] leading-none">＋</span>
+                      Add a bottle
+                      {bottles.length > 0 && (
+                        <span className="font-normal text-xs text-text-faint">
+                          or duplicate an existing one
+                        </span>
+                      )}
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex gap-2.5 items-start text-[13px] text-text-muted bg-surface-alt border border-border rounded-lg px-3.5 py-2.5 mt-4">
+                  <span className="flex-shrink-0 w-5 h-5 rounded-full bg-primary-light text-primary font-bold text-xs flex items-center justify-center mt-0.5">
+                    i
+                  </span>
+                  <span>
+                    No bottles yet? That&apos;s fine — save without any and add
+                    them when your order arrives. The supplement will show as{" "}
+                    <b className="text-text font-semibold">out of stock</b> until
+                    then.
+                  </span>
                 </div>
               </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => openNewBottle()}
-                className="btn-outline w-full text-sm"
-              >
-                + Add New Bottle
-              </button>
             )}
-          </div>
 
-          {bottles.length === 0 && !addingBottle && (
-            <p className="text-xs text-text-muted">
-              Add at least one bottle to track stock & spend (you can also add
-              bottles later).
-            </p>
-          )}
-        </div>
-
-        {/* Dosages */}
-        {people && people.some((p) => p.status !== "disabled") && (
-          <div className="border-t border-border-strong pt-4">
-            <h3 className="text-sm font-semibold mb-3">
-              Who takes this? (optional)
-            </h3>
-            <div className="space-y-3">
-              {people
-                .filter((p) => p.status !== "disabled")
-                .map((person) => {
-                const personDosage = dosages.find(
-                  (d) => d.personId === person._id
-                );
-                return (
-                  <div
-                    key={person._id}
-                    className="border border-border-strong rounded-lg p-3"
-                  >
-                    <div className="flex items-center gap-2 mb-2">
-                      <input
-                        type="checkbox"
-                        id={`person-${person._id}`}
-                        checked={!!personDosage}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setDosages([
-                              ...dosages,
-                              { personId: person._id, pillsPerWeek: 7 },
-                            ]);
-                          } else {
-                            setDosages(
-                              dosages.filter((d) => d.personId !== person._id)
-                            );
-                          }
-                        }}
-                        className="w-4 h-4"
-                      />
-                      <label
-                        htmlFor={`person-${person._id}`}
-                        className="text-sm font-medium"
-                      >
-                        {person.name}
-                      </label>
-                    </div>
-
-                    {personDosage && (
-                      <div className="ml-6">
-                        <DosageInput
-                          value={personDosage.pillsPerWeek}
+            {step === 3 && (
+              <div>
+                <h3 className="text-[15px] font-bold mb-1">Who takes it?</h3>
+                <p className="text-[13px] text-text-muted mb-3.5">
+                  Turn on each person who takes this, then set how often. Dosage
+                  drives the run-out forecast.
+                </p>
+                {!people ? (
+                  <p className="text-sm text-text-muted">Loading people…</p>
+                ) : activePeople.length === 0 ? (
+                  <div className="border border-dashed border-border-strong rounded-xl p-4 space-y-2">
+                    <p className="text-sm text-text-muted">
+                      No people in this household yet. Add someone under People,
+                      then come back to assign a dosage.
+                    </p>
+                    <Link
+                      href="/people"
+                      className="inline-flex text-sm font-semibold text-primary hover:underline"
+                    >
+                      Go to People →
+                    </Link>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {activePeople.map((person) => {
+                      const personDosage = dosages.find(
+                        (d) => d.personId === person._id
+                      );
+                      return (
+                        <PersonDosageCard
+                          key={person._id}
+                          person={person}
+                          active={!!personDosage}
+                          pillsPerWeek={personDosage?.pillsPerWeek ?? 7}
+                          onToggle={(on) => {
+                            if (on) {
+                              setDosages([
+                                ...dosages,
+                                { personId: person._id, pillsPerWeek: 7 },
+                              ]);
+                            } else {
+                              setDosages(
+                                dosages.filter(
+                                  (d) => d.personId !== person._id
+                                )
+                              );
+                            }
+                          }}
                           onChange={(pillsPerWeek) =>
                             setDosages(
                               dosages.map((d) =>
@@ -606,43 +786,45 @@ export default function AddSupplementPage() {
                             )
                           }
                         />
-                      </div>
-                    )}
+                      );
+                    })}
                   </div>
-                );
-              })}
-            </div>
+                )}
+              </div>
+            )}
           </div>
-        )}
 
-        <div className="flex gap-2 pt-4">
-          <button
-            type="submit"
-            disabled={saving}
-            className="btn-primary flex-1 disabled:opacity-50"
-          >
-            {saving ? "Saving..." : "Save supplement"}
-          </button>
-          <Link href="/supplements" className="btn-outline flex-1 text-center">
-            Cancel
-          </Link>
+          <SummaryRail
+            supplementName={formData.name}
+            imageUrl={
+              formData.iconId
+                ? undefined
+                : formData.imageUrl || pendingLabel?.thumbnailUrl
+            }
+            iconId={formData.iconId || undefined}
+            bottles={bottles}
+            groupMode={groupChoice}
+            groupName={railGroupName}
+            memberCount={selectedGroup?.members.length}
+            joinExisting={!!joinExisting}
+            dosageLines={dosageLines}
+            dosageFromGroup={!!joinExisting}
+          />
         </div>
       </form>
 
-      <div className="text-center">
-        <Link
-          href="/supplements"
-          className="text-sm text-primary hover:underline"
-        >
-          ← Back to supplements
-        </Link>
-      </div>
+      <WizardFooter
+        step={step}
+        maxStep={maxStep}
+        saving={saving}
+        onBack={() => goToStep(step - 1)}
+        onContinue={handleContinue}
+      />
 
       {factsEditorOpen && (
         <FactsEditorModal
           initial={manualFacts}
           onSave={(payload) => {
-            // Stage the draft; it's written after the supplement is created.
             setManualFacts(payload);
             setPendingLabel(null);
           }}

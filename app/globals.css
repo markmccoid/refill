@@ -92,15 +92,35 @@
 
 @layer components {
   .btn-primary {
-    @apply inline-flex items-center justify-center px-4 py-2 bg-primary text-white rounded-sm font-medium text-sm hover:bg-primary-dark transition-colors;
+    @apply inline-flex items-center justify-center px-4 py-2 bg-primary text-white rounded-lg font-medium text-sm hover:bg-primary-dark transition-colors;
   }
 
   .btn-outline {
-    @apply inline-flex items-center justify-center px-4 py-2 border border-current text-text rounded-sm font-medium text-sm hover:bg-surface-alt transition-colors;
+    @apply inline-flex items-center justify-center px-4 py-2 border border-current text-text rounded-lg font-medium text-sm hover:bg-surface-alt transition-colors;
   }
 
   .card {
-    @apply bg-surface border border-border-strong rounded-md shadow-card;
+    @apply bg-surface border border-border-strong rounded-xl shadow-card;
+  }
+
+  .pill {
+    @apply inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-semibold whitespace-nowrap;
+  }
+
+  .chip {
+    @apply px-3.5 py-1.5 text-[13px] font-semibold rounded-full text-text-muted bg-surface border border-border-strong transition-colors;
+  }
+
+  .chip-active {
+    @apply bg-text text-surface border-text;
+  }
+
+  .supply-track {
+    @apply h-[5px] rounded-full overflow-hidden bg-text/10;
+  }
+
+  .supply-fill {
+    @apply h-full rounded-full;
   }
 
   .status-critical {
@@ -132,6 +152,61 @@
       var(--checker-b)
     );
   }
+
+  /* Playful supplement icon tiles (mockup-style). Pastels are content colors,
+     like person.color — light theme first, darkened under .dark. */
+  .supp-icon {
+    @apply flex items-center justify-center rounded-lg border border-border-strong flex-shrink-0 select-none;
+  }
+  .supp-icon-sun { background: linear-gradient(135deg, #fef3c7, #fde68a); }
+  .supp-icon-fish { background: linear-gradient(135deg, #e0f2fe, #bae6fd); }
+  .supp-icon-leaf { background: linear-gradient(135deg, #ecfdf5, #d1fae5); }
+  .supp-icon-droplet { background: linear-gradient(135deg, #e0f2fe, #7dd3fc); }
+  .supp-icon-zap { background: linear-gradient(135deg, #fef9c3, #fde047); }
+  .supp-icon-moon { background: linear-gradient(135deg, #e0e7ff, #c7d2fe); }
+  .supp-icon-shield { background: linear-gradient(135deg, #f1f5f9, #e2e8f0); }
+  .supp-icon-flame { background: linear-gradient(135deg, #ffedd5, #fdba74); }
+  .supp-icon-heart { background: linear-gradient(135deg, #fce7f3, #f9a8d4); }
+  .supp-icon-sparkle { background: linear-gradient(135deg, #faf5ff, #e9d5ff); }
+  .supp-icon-pill { background: linear-gradient(135deg, #fdf2f8, #fbcfe8); }
+  .supp-icon-flask { background: linear-gradient(135deg, #ecfeff, #a5f3fc); }
+  .supp-icon-bone { background: linear-gradient(135deg, #f5f5f4, #d6d3d1); }
+  .supp-icon-brain { background: linear-gradient(135deg, #fae8ff, #e9d5ff); }
+  .supp-icon-muscle { background: linear-gradient(135deg, #fee2e2, #fca5a5); }
+  .supp-icon-apple { background: linear-gradient(135deg, #fee2e2, #f87171); }
+  .supp-icon-dna { background: linear-gradient(135deg, #dbeafe, #93c5fd); }
+  .supp-icon-microscope { background: linear-gradient(135deg, #e0e7ff, #a5b4fc); }
+  .supp-icon-tea { background: linear-gradient(135deg, #dcfce7, #86efac); }
+  .supp-icon-berry { background: linear-gradient(135deg, #ede9fe, #c4b5fd); }
+  .supp-icon-balance { background: linear-gradient(135deg, #fef3c7, #fcd34d); }
+  .supp-icon-seed { background: linear-gradient(135deg, #d1fae5, #6ee7b7); }
+  .supp-icon-eye { background: linear-gradient(135deg, #e0f2fe, #38bdf8); }
+  .supp-icon-lotus { background: linear-gradient(135deg, #fce7f3, #f9a8d4); }
+
+  .dark .supp-icon-sun { background: linear-gradient(135deg, #5c4a1a, #8a6d20); }
+  .dark .supp-icon-fish { background: linear-gradient(135deg, #1e3a5f, #2563a8); }
+  .dark .supp-icon-leaf { background: linear-gradient(135deg, #14532d, #166534); }
+  .dark .supp-icon-droplet { background: linear-gradient(135deg, #0c4a6e, #0369a1); }
+  .dark .supp-icon-zap { background: linear-gradient(135deg, #713f12, #a16207); }
+  .dark .supp-icon-moon { background: linear-gradient(135deg, #312e81, #4338ca); }
+  .dark .supp-icon-shield { background: linear-gradient(135deg, #334155, #475569); }
+  .dark .supp-icon-flame { background: linear-gradient(135deg, #7c2d12, #c2410c); }
+  .dark .supp-icon-heart { background: linear-gradient(135deg, #831843, #be185d); }
+  .dark .supp-icon-sparkle { background: linear-gradient(135deg, #4c1d95, #7c3aed); }
+  .dark .supp-icon-pill { background: linear-gradient(135deg, #831843, #9d174d); }
+  .dark .supp-icon-flask { background: linear-gradient(135deg, #164e63, #0e7490); }
+  .dark .supp-icon-bone { background: linear-gradient(135deg, #44403c, #78716c); }
+  .dark .supp-icon-brain { background: linear-gradient(135deg, #581c87, #7e22ce); }
+  .dark .supp-icon-muscle { background: linear-gradient(135deg, #7f1d1d, #b91c1c); }
+  .dark .supp-icon-apple { background: linear-gradient(135deg, #7f1d1d, #dc2626); }
+  .dark .supp-icon-dna { background: linear-gradient(135deg, #1e3a8a, #2563eb); }
+  .dark .supp-icon-microscope { background: linear-gradient(135deg, #312e81, #4f46e5); }
+  .dark .supp-icon-tea { background: linear-gradient(135deg, #14532d, #16a34a); }
+  .dark .supp-icon-berry { background: linear-gradient(135deg, #4c1d95, #7c3aed); }
+  .dark .supp-icon-balance { background: linear-gradient(135deg, #713f12, #ca8a04); }
+  .dark .supp-icon-seed { background: linear-gradient(135deg, #064e3b, #059669); }
+  .dark .supp-icon-eye { background: linear-gradient(135deg, #0c4a6e, #0284c7); }
+  .dark .supp-icon-lotus { background: linear-gradient(135deg, #831843, #db2777); }
 }
 
 * {

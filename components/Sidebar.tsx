@@ -46,7 +46,7 @@ export function Sidebar() {
   };
 
   return (
-    <aside className="mobile-nav fixed inset-x-0 bottom-0 z-40 flex h-[calc(4.25rem+env(safe-area-inset-bottom))] w-full flex-row border-t border-border bg-surface-alt px-1 pt-1 pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_24px_-18px_rgba(20,40,30,0.4)] md:static md:h-auto md:w-48 md:flex-col md:border-r md:border-t-0 md:p-4 md:shadow-none">
+    <aside className="mobile-nav fixed inset-x-0 bottom-0 z-40 flex h-[calc(4.25rem+env(safe-area-inset-bottom))] w-full flex-row border-t border-border bg-surface px-1 pt-1 pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_24px_-18px_rgba(20,40,30,0.4)] md:static md:h-auto md:w-48 md:flex-col md:border-r md:border-t-0 md:bg-surface md:p-4 md:shadow-none">
       {/* Brand */}
       <div className="mb-1 hidden pb-1 border-b border-border md:block">
         <div className="flex items-center">

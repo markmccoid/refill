@@ -127,7 +127,13 @@ export async function groupDosageTemplate(
   }));
 }
 
-/** Shared body for groups.create and purchase-time group formation. */
+/**
+ * Shared body for groups.create, purchase-time group formation, and the Add
+ * flow's create-supplement-into-new-group. Accepts a single supplement: the
+ * new Add flow starts a group with the supplement being created as its first
+ * brand, expecting more to join later (auto-dissolve at one member still
+ * applies on detach — see detachSupplementFromGroup).
+ */
 export async function createGroupFromSupplements(
   ctx: MutationCtx,
   args: {
@@ -139,8 +145,8 @@ export async function createGroupFromSupplements(
   }
 ): Promise<Id<"groups">> {
   const { householdId, name, category, supplementIds, dosages } = args;
-  if (supplementIds.length < 2) {
-    throw new Error("A group needs at least two supplements.");
+  if (supplementIds.length < 1) {
+    throw new Error("A group needs at least one supplement.");
   }
   for (const id of supplementIds) {
     const supplement = await ctx.db.get(id);
@@ -210,10 +216,12 @@ export async function addSupplementToGroup(
 }
 
 /**
- * Create a group from ≥2 existing supplements (ADR-0004). Each member is frozen
+ * Create a group from ≥1 existing supplements (ADR-0004). Each member is frozen
  * solo at its current rate first, then pooled under one fresh shared anchor. The
  * confirmed group dosage is materialised onto every member; members' prior
  * per-brand dosages are DISCARDED (option B — the group starts override-free).
+ * A single-member group is valid: the Add flow starts one with the supplement
+ * being created as its first brand.
  */
 export const create = mutation({
   args: {

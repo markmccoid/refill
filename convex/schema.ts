@@ -69,6 +69,9 @@ export default defineSchema({
     }))),
     category: v.optional(v.string()),
     imageUrl: v.optional(v.string()),
+    // Playful catalog icon id (see lib/supplement-icons.ts). When set, the UI
+    // prefers it over imageUrl for list/detail thumbs. Missing on older rows.
+    iconId: v.optional(v.string()),
     jarSize: v.number(), // default bottle count; pre-fills the add-bottle form
     // Consumption model: on-hand is computed from this anchor, not stored live.
     // With the bottle ledger (ADR-0002) the truth is per-bottle remainingAtAnchor;

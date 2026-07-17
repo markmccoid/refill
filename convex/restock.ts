@@ -619,6 +619,61 @@ export const setPlan = mutation({
   },
 });
 
+/**
+ * Quick-add one subject (solo supplement XOR group) to the active plan from the
+ * supplements list — setPlan reconciles the whole membership set, so it can't
+ * be used for a single add without racing other edits. Idempotent: if the
+ * subject already has an active item this is a no-op, preserving the invariant
+ * of at most one active row per subject (and any prices/selection on it). Qty
+ * pre-fills from the same recommendation setPlan uses.
+ */
+export const addItem = mutation({
+  args: {
+    householdId: v.id("households"),
+    supplementId: v.optional(v.id("supplements")),
+    groupId: v.optional(v.id("groups")),
+  },
+  returns: v.null(),
+  async handler(ctx, { householdId, supplementId, groupId }) {
+    await requireMembership(ctx, householdId);
+    if (!!supplementId === !!groupId) {
+      throw new Error("Pass exactly one of supplementId or groupId.");
+    }
+    const { coverageTargetDays } = settingsOf(await ctx.db.get(householdId));
+    // Deriving the subject from the household's states doubles as validation:
+    // it proves the subject belongs to this household and that a grouped brand
+    // isn't being added solo (only ungrouped supplements and groups are subjects).
+    const states = await getSubjectStates(ctx, householdId);
+    const subject = states.find((s) =>
+      groupId ? s.groupId === groupId : s.supplementId === supplementId
+    );
+    if (!subject) {
+      throw new Error("Subject not found in this household.");
+    }
+
+    const items = await activeItems(ctx, householdId);
+    const existing = items.find((i) =>
+      groupId ? i.groupId === groupId : i.supplementId === supplementId
+    );
+    if (existing) return null;
+
+    await ctx.db.insert("restockItems", {
+      householdId,
+      supplementId: subject.supplementId ?? undefined,
+      groupId: subject.groupId ?? undefined,
+      qty: getRecommendedQty(
+        subject.ratePerDay,
+        subject.onHand + subject.incomingCount,
+        subject.defaultBrand?.jarSize ?? 0,
+        coverageTargetDays
+      ),
+      status: "active",
+      addedAt: Date.now(),
+    });
+    return null;
+  },
+});
+
 async function requireActiveItem(
   ctx: MutationCtx,
   id: Id<"restockItems">

@@ -10,7 +10,11 @@ import {
 import { linkPurchaseUrl } from "./retailers";
 import { bottleDoc } from "./bottles";
 import { deleteSupplementSubjectLifecycle } from "./candidateProducts";
-import { detachSupplementFromGroup } from "./groups";
+import {
+  addSupplementToGroup,
+  createGroupFromSupplements,
+  detachSupplementFromGroup,
+} from "./groups";
 
 const nutrientsValidator = v.array(
   v.object({
@@ -34,6 +38,7 @@ const supplementDoc = v.object({
   nutrients: v.optional(nutrientsValidator),
   category: v.optional(v.string()),
   imageUrl: v.optional(v.string()),
+  iconId: v.optional(v.string()),
   jarSize: v.number(),
   quantityAnchor: v.optional(v.number()),
   anchoredAt: v.optional(v.number()),
@@ -122,6 +127,12 @@ export const assertAccess = internalQuery({
 // Create a supplement and insert its initial bottles (ADR-0002). Each bottle is
 // full at creation (remainingAtAnchor = count); a partially-used bottle can be
 // corrected afterward with bottles.recount. quantityAnchor caches Σ counts.
+//
+// The redesigned Add flow can also group the supplement at creation time —
+// either joining an existing group (it inherits the group's dosage template,
+// same as groups.addMember) or starting a fresh group with this supplement as
+// its first brand (ADR-0004 single-member group). The two are mutually
+// exclusive; omitting both keeps the classic solo-create behavior.
 export const create = mutation({
   args: {
     householdId: v.id("households"),
@@ -134,6 +145,7 @@ export const create = mutation({
     nutrients: v.optional(nutrientsValidator),
     category: v.optional(v.string()),
     imageUrl: v.optional(v.string()),
+    iconId: v.optional(v.string()),
     jarSize: v.number(),
     bottles: v.array(
       v.object({
@@ -144,12 +156,34 @@ export const create = mutation({
         remaining: v.optional(v.number()), // pills on hand now (defaults to full count)
       })
     ),
+    // Join this existing group after creation (XOR newGroup).
+    groupId: v.optional(v.id("groups")),
+    // Start a new group with this supplement as its first brand (XOR groupId).
+    newGroup: v.optional(
+      v.object({
+        name: v.string(),
+        category: v.optional(v.string()),
+        dosages: v.array(
+          v.object({ personId: v.id("people"), pillsPerWeek: v.number() })
+        ),
+      })
+    ),
   },
   returns: v.id("supplements"),
   async handler(ctx, args) {
     await requireMembership(ctx, args.householdId);
-    const { bottles, ...supplementFields } = args;
+    if (args.groupId && args.newGroup) {
+      throw new Error("Pass either groupId or newGroup, not both.");
+    }
+    if (args.groupId) await requireGroupAccess(ctx, args.groupId);
+    const { bottles, groupId, newGroup, ...supplementFields } = args;
     const now = Date.now();
+
+    // Appearance XOR: icon wins over photo when both are somehow sent.
+    const iconId = supplementFields.iconId?.trim() || undefined;
+    const imageUrl = iconId
+      ? undefined
+      : supplementFields.imageUrl?.trim() || undefined;
 
     const onHand = bottles.reduce((sum, b) => {
       const remaining =
@@ -160,6 +194,8 @@ export const create = mutation({
     }, 0);
     const supplementId = await ctx.db.insert("supplements", {
       ...supplementFields,
+      iconId,
+      imageUrl,
       quantityAnchor: onHand,
       anchoredAt: now,
       createdAt: now,
@@ -187,6 +223,20 @@ export const create = mutation({
       });
     }
 
+    // Group AFTER the bottles exist so the attach re-anchor sees real stock.
+    if (groupId) {
+      // Inherits the group's dosage template (same path as groups.addMember).
+      await addSupplementToGroup(ctx, groupId, supplementId);
+    } else if (newGroup) {
+      await createGroupFromSupplements(ctx, {
+        householdId: args.householdId,
+        name: newGroup.name,
+        category: newGroup.category,
+        supplementIds: [supplementId],
+        dosages: newGroup.dosages,
+      });
+    }
+
     return supplementId;
   },
 });
@@ -206,11 +256,25 @@ export const update = mutation({
     category: v.optional(v.string()),
     jarSize: v.optional(v.number()),
     imageUrl: v.optional(v.string()),
+    iconId: v.optional(v.string()),
   },
   returns: v.union(supplementDoc, v.null()),
   async handler(ctx, { id, ...updates }) {
     await requireSupplementAccess(ctx, id);
-    await ctx.db.patch(id, updates);
+    // Appearance XOR in the UI: picking an icon clears the photo and vice
+    // versa. Empty string means "clear this field".
+    const patch = { ...updates };
+    if (updates.iconId !== undefined) {
+      const iconId = updates.iconId.trim() || undefined;
+      patch.iconId = iconId;
+      if (iconId) patch.imageUrl = undefined;
+    }
+    if (updates.imageUrl !== undefined) {
+      const imageUrl = updates.imageUrl.trim() || undefined;
+      patch.imageUrl = imageUrl;
+      if (imageUrl) patch.iconId = undefined;
+    }
+    await ctx.db.patch(id, patch);
     return await ctx.db.get(id);
   },
 });

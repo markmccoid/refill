@@ -4,12 +4,13 @@ import { useParams, useRouter } from "next/navigation";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id, Doc } from "@/convex/_generated/dataModel";
-import { ImageUploader } from "@/components/ImageUploader";
 import {
   DsldFindDetails,
   type DsldLabel,
   type DsldFindDetailsHandle,
 } from "@/components/DsldFindDetails";
+import { SupplementAppearancePicker } from "@/components/SupplementAppearancePicker";
+import { SupplementThumb } from "@/components/SupplementThumb";
 import { SupplementFactsPanel } from "@/components/SupplementFactsPanel";
 import { DosageInput } from "@/components/DosageInput";
 import { BottleFields } from "@/components/BottleFields";
@@ -106,6 +107,7 @@ export default function SupplementDetailPage() {
     category: "",
     jarSize: 0,
     imageUrl: "",
+    iconId: "",
   });
 
   // Bottle add / edit form state.
@@ -283,7 +285,8 @@ export default function SupplementDetailPage() {
         category: editData.category || undefined,
         nutrients: pendingNutrients ?? undefined,
         jarSize: editData.jarSize,
-        imageUrl: editData.imageUrl || undefined,
+        imageUrl: editData.imageUrl || "",
+        iconId: editData.iconId || "",
       });
 
       // Attach/refresh DSLD facts + label images if a product was picked.
@@ -535,14 +538,13 @@ export default function SupplementDetailPage() {
 
       {/* Main Info Card */}
       <div className="card p-6 space-y-4">
-        {supplement.imageUrl && (
-          <div className="w-32 h-32 bg-surface-alt rounded-lg overflow-hidden border border-border-strong">
-            <img
-              src={supplement.imageUrl}
-              alt={supplement.name}
-              className="w-full h-full object-cover"
-            />
-          </div>
+        {!isEditing && (supplement.iconId || supplement.imageUrl) && (
+          <SupplementThumb
+            iconId={supplement.iconId}
+            imageUrl={supplement.imageUrl}
+            name={supplement.name}
+            size="lg"
+          />
         )}
 
         <div className="flex items-start justify-between">
@@ -600,9 +602,7 @@ export default function SupplementDetailPage() {
             )}
           </div>
 
-          <div
-            className={`px-3 py-1 rounded-full text-sm font-semibold status-${status}`}
-          >
+          <div className={`pill status-${status}`}>
             {status === "critical" && `${daysLeft} days`}
             {status === "low" && `${daysLeft} days`}
             {status === "on-track" && "On track"}
@@ -760,10 +760,16 @@ export default function SupplementDetailPage() {
                 Just the default for new bottles. Edit stock in Bottles below.
               </p>
             </div>
-            <ImageUploader
-              imageUrl={editData.imageUrl}
-              onImageChange={(url) =>
-                setEditData({ ...editData, imageUrl: url })
+            <SupplementAppearancePicker
+              iconId={editData.iconId || undefined}
+              imageUrl={editData.imageUrl || undefined}
+              name={editData.name || supplement.name}
+              onChange={({ iconId, imageUrl }) =>
+                setEditData({
+                  ...editData,
+                  iconId: iconId ?? "",
+                  imageUrl: imageUrl ?? "",
+                })
               }
             />
           </div>
@@ -782,6 +788,7 @@ export default function SupplementDetailPage() {
                   category: supplement.category || "",
                   jarSize: supplement.jarSize,
                   imageUrl: supplement.imageUrl || "",
+                  iconId: supplement.iconId || "",
                 });
                 setPendingDsldId(null);
                 setPendingNutrients(null);
@@ -862,9 +869,9 @@ export default function SupplementDetailPage() {
                     {toDateInput(s.bottle.purchasedAt)}
                   </span>
                 </div>
-                <div className="h-1.5 bg-surface-alt rounded-full overflow-hidden">
+                <div className="supply-track">
                   <div
-                    className="h-full bg-primary/60"
+                    className="supply-fill bg-primary/60"
                     style={{ width: `${Math.min(100, s.fillPct)}%` }}
                   />
                 </div>
