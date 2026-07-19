@@ -315,7 +315,6 @@ export const badgeCount = query({
       const daysLeft = daysLeftFromCache(
         {
           cachedOnHand: s.cachedOnHand,
-          cachedIncomingCount: s.cachedIncomingCount,
           cachedRatePerDay: s.cachedRatePerDay,
           forecastCachedAt: s.forecastCachedAt,
         },
@@ -341,7 +340,6 @@ export const badgeCount = query({
       const daysLeft = daysLeftFromCache(
         {
           cachedOnHand: g.cachedOnHand,
-          cachedIncomingCount: g.cachedIncomingCount,
           cachedRatePerDay: g.cachedRatePerDay,
           forecastCachedAt: g.forecastCachedAt,
         },
