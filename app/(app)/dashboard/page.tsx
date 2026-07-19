@@ -16,12 +16,8 @@ import {
 export default function DashboardPage() {
   const householdId = useHousehold();
 
-  const supplements = useQuery(
-    api.supplements.list,
-    householdId ? { householdId } : "skip"
-  );
-  const groups = useQuery(
-    api.groups.list,
+  const inventory = useQuery(
+    api.inventory.listForHousehold,
     householdId ? { householdId } : "skip"
   );
 
@@ -37,14 +33,14 @@ export default function DashboardPage() {
     return <div className="text-center py-12">Loading household...</div>;
   }
 
-  if (!supplements || !groups) {
+  if (!inventory) {
     return <div className="text-center py-12">Loading supplements...</div>;
   }
 
+  const { solos: supplements, groups } = inventory;
+
   // Ungrouped supplements deplete independently (unchanged).
-  const soloDerived = supplements
-    .filter((s) => !s.groupId)
-    .map((s) => {
+  const soloDerived = supplements.map((s) => {
       const anchoredAt = s.anchoredAt ?? s.createdAt ?? Date.now();
       const breakdown = getBottleStatesForDosages(
         s.bottles ?? [],

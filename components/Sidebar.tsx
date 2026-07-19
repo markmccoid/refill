@@ -46,22 +46,21 @@ export function Sidebar() {
   };
 
   return (
-    <aside className="mobile-nav fixed inset-x-0 bottom-0 z-40 flex h-[calc(4.25rem+env(safe-area-inset-bottom))] w-full flex-row border-t border-border bg-surface px-1 pt-1 pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_24px_-18px_rgba(20,40,30,0.4)] md:static md:h-auto md:w-48 md:flex-col md:border-r md:border-t-0 md:bg-surface md:p-4 md:shadow-none">
+    <aside className="mobile-nav fixed inset-x-0 bottom-0 z-40 flex h-[calc(4.25rem+env(safe-area-inset-bottom))] w-full flex-row border-t border-border bg-surface px-1 pt-1 pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_24px_-18px_rgba(20,40,30,0.4)] md:static md:flex md:h-full md:w-56 md:shrink-0 md:flex-col md:border-r md:border-t-0 md:bg-surface md:px-4 md:py-5 md:shadow-none">
       {/* Brand */}
-      <div className="mb-1 hidden pb-1 border-b border-border md:block">
-        <div className="flex items-center">
-          <Image
-            src="/refill-logo.png"
-            alt="Refill"
-            width={300}
-            height={45}
-            className="rounded-md flex-shrink-0"
-          />
-        </div>
+      <div className="mb-4 hidden shrink-0 border-b border-border pb-4 md:block">
+        <Image
+          src="/refill-logo.png"
+          alt="Refill"
+          width={300}
+          height={45}
+          className="h-auto w-full max-w-[168px] rounded-md"
+          priority
+        />
       </div>
 
       {/* Navigation */}
-      <nav className="flex min-w-0 flex-1 flex-row justify-around gap-0 md:block md:space-y-0.5">
+      <nav className="flex min-w-0 flex-1 flex-row justify-around gap-0 md:flex-col md:justify-start md:gap-0.5 md:overflow-y-auto">
         {nav.map((item) => {
           const isActive = pathname.startsWith("/insights")
             ? item.href.startsWith("/insights")
@@ -71,18 +70,18 @@ export function Sidebar() {
               key={item.href}
               href={item.href}
               aria-label={item.label}
-              className={`flex min-h-11 min-w-0 flex-1 items-center justify-center rounded-md px-1 py-1.5 text-center text-[10px] transition-colors md:block md:px-3 md:py-2 md:text-left md:text-sm ${
+              className={`flex min-h-11 min-w-0 flex-1 items-center justify-center rounded-md px-1 py-1.5 text-center text-[10px] transition-colors md:min-h-0 md:w-full md:flex-none md:justify-start md:px-3 md:py-2 md:text-left md:text-sm ${
                 isActive
                   ? "bg-primary-light text-primary font-semibold"
                   : "text-text-muted hover:text-text hover:bg-text/5 font-medium"
               }`}
             >
-              <span className="flex items-center justify-between">
+              <span className="flex w-full items-center justify-between gap-2">
                 <span className="truncate">{item.label}</span>
                 {item.href.startsWith("/restock") &&
                   typeof restockBadge === "number" &&
                   restockBadge > 0 && (
-                    <span className="ml-2 min-w-5 h-5 px-1.5 rounded-full bg-low text-white text-[11px] font-bold flex items-center justify-center">
+                    <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-low px-1.5 text-[11px] font-bold text-white">
                       {restockBadge}
                     </span>
                   )}
@@ -103,15 +102,15 @@ export function Sidebar() {
       </div>
 
       {/* People + sign out */}
-      <div className="hidden pt-4 border-t border-border space-y-3 md:block">
+      <div className="mt-auto hidden shrink-0 space-y-3 border-t border-border pt-4 md:block">
         {people && people.length > 0 && (
           <div className="flex items-center gap-2">
             {people.map((p) => (
               <div
                 key={p._id}
-                className={`w-8 h-8 rounded-full bg-gradient-to-br ${
+                className={`flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br text-xs font-bold text-white shadow-sm ${
                   AVATAR_GRADIENTS[p.color] ?? "from-slate-400 to-slate-600"
-                } flex items-center justify-center text-white text-xs font-bold shadow-sm`}
+                }`}
                 title={p.name}
               >
                 {p.name.charAt(0).toUpperCase()}
@@ -122,7 +121,7 @@ export function Sidebar() {
         <ThemeToggle />
         <button
           onClick={handleSignOut}
-          className="w-full text-left text-xs font-medium text-text-muted hover:text-text transition-colors"
+          className="w-full text-left text-xs font-medium text-text-muted transition-colors hover:text-text"
         >
           Sign out
         </button>

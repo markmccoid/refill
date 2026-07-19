@@ -10,6 +10,7 @@ import {
   type FactsLike,
   type PersonNutrients,
 } from "../lib/nutrient-utils";
+import { loadHouseholdLedger } from "./consumption";
 
 /**
  * Per-person nutrient aggregation (the data behind /insights). For each active
@@ -24,30 +25,18 @@ export const summary = query({
   async handler(ctx, { householdId }) {
     await requireMembership(ctx, householdId);
 
-    const people = (
-      await ctx.db
-        .query("people")
-        .withIndex("by_household", (q) => q.eq("householdId", householdId))
-        .collect()
-    ).filter((p) => p.status !== "disabled");
+    const ledger = await loadHouseholdLedger(ctx, householdId);
+    const people = [...ledger.peopleById.values()].filter(
+      (p): p is NonNullable<typeof p> => !!p && p.status !== "disabled"
+    );
+    const supplements = ledger.supplements;
+    const groups = ledger.groups;
+    const bottlesBySupplement = ledger.bottlesBySupplement;
+    const dosagesBySupplement = ledger.dosagesBySupplement;
 
-    const supplements = await ctx.db
-      .query("supplements")
-      .withIndex("by_household", (q) => q.eq("householdId", householdId))
-      .collect();
-
-    // Facts + bottles keyed by supplement id.
     const factsBySupplement = new Map<
       Id<"supplements">,
       Doc<"supplementFacts">
-    >();
-    const bottlesBySupplement = new Map<
-      Id<"supplements">,
-      Doc<"bottles">[]
-    >();
-    const dosagesBySupplement = new Map<
-      Id<"supplements">,
-      Doc<"dosages">[]
     >();
     for (const s of supplements) {
       const facts = await ctx.db
@@ -55,18 +44,6 @@ export const summary = query({
         .withIndex("by_supplement", (q) => q.eq("supplementId", s._id))
         .unique();
       if (facts) factsBySupplement.set(s._id, facts);
-
-      const bottles = await ctx.db
-        .query("bottles")
-        .withIndex("by_supplement", (q) => q.eq("supplementId", s._id))
-        .collect();
-      bottlesBySupplement.set(s._id, bottles);
-
-      const dosages = await ctx.db
-        .query("dosages")
-        .withIndex("by_supplement", (q) => q.eq("supplementId", s._id))
-        .collect();
-      dosagesBySupplement.set(s._id, dosages);
     }
 
     // Dosages grouped by person → { supplementId, weekly } for active people.
@@ -83,12 +60,6 @@ export const summary = query({
         list.push({ supplementId: s._id, weekly: dosageWeekly(d) });
       }
     }
-
-    // Group: supplementId → groupId (for the members we still need to attribute).
-    const groups = await ctx.db
-      .query("groups")
-      .withIndex("by_household", (q) => q.eq("householdId", householdId))
-      .collect();
 
     // For each group, precompute which member brand is open (the one whose
     // facts count). Determined by the pooled FIFO walk at the group's rate.

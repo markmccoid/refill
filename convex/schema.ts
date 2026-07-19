@@ -48,6 +48,12 @@ export default defineSchema({
     category: v.optional(v.string()),
     anchoredAt: v.number(), // shared clock for the pooled consumption walk
     createdAt: v.number(),
+    // Denormalized forecast snapshot for cheap restock.badgeCount (I/O).
+    // Refreshed on stock/rate mutations; badge extrapolates from forecastCachedAt.
+    cachedOnHand: v.optional(v.number()),
+    cachedIncomingCount: v.optional(v.number()),
+    cachedRatePerDay: v.optional(v.number()),
+    forecastCachedAt: v.optional(v.number()),
   })
     .index("by_household", ["householdId"]),
 
@@ -82,12 +88,20 @@ export default defineSchema({
     price: v.optional(v.number()), // legacy: single per-bottle price (pre bottle ledger)
     purchaseUrl: v.optional(v.string()), // legacy: purchase link now lives per-bottle
     createdAt: v.number(),
+    // Denormalized forecast snapshot for cheap restock.badgeCount (I/O).
+    // Solo subjects only; grouped brands use the parent group's cache.
+    cachedOnHand: v.optional(v.number()),
+    cachedIncomingCount: v.optional(v.number()),
+    cachedRatePerDay: v.optional(v.number()),
+    forecastCachedAt: v.optional(v.number()),
   })
     .index("by_household", ["householdId"])
     .index("by_group", ["groupId"]),
 
   // A physical bottle purchase. FIFO ledger backing on-hand + cost (ADR-0002).
   bottles: defineTable({
+    // Denormalized for household-scoped batch reads (inventory / restock I/O).
+    householdId: v.optional(v.id("households")),
     supplementId: v.id("supplements"),
     count: v.number(), // label capacity of this bottle
     price: v.number(), // what was paid for this bottle
@@ -98,7 +112,8 @@ export default defineSchema({
     // supplement.quantityAnchor. Consumption drains these oldest-first on read.
     remainingAtAnchor: v.number(),
   })
-    .index("by_supplement", ["supplementId"]),
+    .index("by_supplement", ["supplementId"])
+    .index("by_household", ["householdId"]),
 
   supplementFacts: defineTable({
     supplementId: v.id("supplements"),
@@ -139,6 +154,8 @@ export default defineSchema({
     .index("by_supplement", ["supplementId"]),
 
   dosages: defineTable({
+    // Denormalized for household-scoped batch reads (inventory / restock I/O).
+    householdId: v.optional(v.id("households")),
     supplementId: v.id("supplements"),
     personId: v.id("people"),
     pillsPerWeek: v.optional(v.number()), // canonical: total pills per week
@@ -149,7 +166,8 @@ export default defineSchema({
     daysPerWeek: v.optional(v.number()),
   })
     .index("by_supplement", ["supplementId"])
-    .index("by_person", ["personId"]),
+    .index("by_person", ["personId"])
+    .index("by_household", ["householdId"]),
 
   dosageEvents: defineTable({
     householdId: v.id("households"),

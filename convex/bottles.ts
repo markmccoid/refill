@@ -1,13 +1,14 @@
 import { mutation, query, MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
-import { reanchorFor } from "./consumption";
+import { reanchorFor, refreshForecastCacheFor } from "./consumption";
 import { requireSupplementAccess } from "./authz";
 import { linkPurchaseUrl } from "./retailers";
 
 export const bottleDoc = v.object({
   _id: v.id("bottles"),
   _creationTime: v.number(),
+  householdId: v.optional(v.id("households")),
   supplementId: v.id("supplements"),
   count: v.number(),
   price: v.number(),
@@ -79,6 +80,7 @@ export const add = mutation({
     let id: Id<"bottles"> | null = null;
     for (let i = 0; i < n; i++) {
       id = await ctx.db.insert("bottles", {
+        householdId: supplement.householdId,
         supplementId,
         count,
         price,
@@ -89,6 +91,7 @@ export const add = mutation({
       });
     }
     await syncAnchorCache(ctx, supplementId);
+    await refreshForecastCacheFor(ctx, supplementId);
     return id!;
   },
 });
@@ -144,6 +147,7 @@ export const update = mutation({
     await ctx.db.patch(id, patch);
 
     if (structural) await syncAnchorCache(ctx, bottle.supplementId);
+    await refreshForecastCacheFor(ctx, bottle.supplementId);
     return await ctx.db.get(id);
   },
 });
@@ -159,6 +163,7 @@ export const remove = mutation({
     await reanchorFor(ctx, bottle.supplementId);
     await ctx.db.delete(id);
     await syncAnchorCache(ctx, bottle.supplementId);
+    await refreshForecastCacheFor(ctx, bottle.supplementId);
   },
 });
 
@@ -183,6 +188,7 @@ export const recount = mutation({
       remainingAtAnchor: Math.max(0, Math.min(remaining, current.count)),
     });
     await syncAnchorCache(ctx, bottle.supplementId);
+    await refreshForecastCacheFor(ctx, bottle.supplementId);
     return await ctx.db.get(id);
   },
 });

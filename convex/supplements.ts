@@ -1,7 +1,11 @@
 import { internalQuery, mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { getConsumptionRate } from "../lib/supplement-utils";
-import { getActiveDosages, getPersonActiveDosages } from "./consumption";
+import {
+  classifyDosagesWithPeople,
+  loadHouseholdLedger,
+  refreshForecastCacheFor,
+} from "./consumption";
 import {
   requireGroupAccess,
   requireMembership,
@@ -46,56 +50,75 @@ const supplementDoc = v.object({
   price: v.optional(v.number()),
   purchaseUrl: v.optional(v.string()),
   createdAt: v.number(),
+  cachedOnHand: v.optional(v.number()),
+  cachedIncomingCount: v.optional(v.number()),
+  cachedRatePerDay: v.optional(v.number()),
+  forecastCachedAt: v.optional(v.number()),
+});
+
+const dosageDoc = v.object({
+  _id: v.id("dosages"),
+  _creationTime: v.number(),
+  householdId: v.optional(v.id("households")),
+  supplementId: v.id("supplements"),
+  personId: v.id("people"),
+  pillsPerWeek: v.optional(v.number()),
+  pausedAt: v.optional(v.number()),
+  pauseUntil: v.optional(v.number()),
+  pillsPerDose: v.optional(v.number()),
+  daysPerWeek: v.optional(v.number()),
+});
+
+const hydratedSupplement = v.object({
+  ...supplementDoc.fields,
+  consumptionRate: v.number(),
+  bottles: v.array(bottleDoc),
+  dosages: v.array(dosageDoc),
 });
 
 // List supplements with each one's consumption rate (pills/day) attached, so
 // the client can compute on-hand live. On-hand itself is derived, not stored.
+// By default skips grouped brands (they appear under groups.list / inventory).
 export const list = query({
+  args: {
+    householdId: v.id("households"),
+    includeGrouped: v.optional(v.boolean()),
+  },
+  returns: v.array(hydratedSupplement),
+  async handler(ctx, { householdId, includeGrouped }) {
+    await requireMembership(ctx, householdId);
+    const ledger = await loadHouseholdLedger(ctx, householdId);
+    const now = Date.now();
+    const rows = includeGrouped
+      ? ledger.supplements
+      : ledger.supplements.filter((s) => !s.groupId);
+
+    return rows.map((s) => {
+      const classified = classifyDosagesWithPeople(
+        ledger.dosagesBySupplement.get(s._id) ?? [],
+        ledger.peopleById,
+        now
+      );
+      return {
+        ...s,
+        consumptionRate: getConsumptionRate(classified.activeForRate, now),
+        bottles: ledger.bottlesBySupplement.get(s._id) ?? [],
+        dosages: classified.personActive,
+      };
+    });
+  },
+});
+
+/** Thin list of supplement docs (no bottles/dosages) for regimen pickers. */
+export const listBasic = query({
   args: { householdId: v.id("households") },
-  returns: v.array(
-    v.object({
-      ...supplementDoc.fields,
-      consumptionRate: v.number(),
-      bottles: v.array(bottleDoc),
-      dosages: v.array(
-        v.object({
-          _id: v.id("dosages"),
-          _creationTime: v.number(),
-          supplementId: v.id("supplements"),
-          personId: v.id("people"),
-          pillsPerWeek: v.optional(v.number()),
-          pausedAt: v.optional(v.number()),
-          pauseUntil: v.optional(v.number()),
-          pillsPerDose: v.optional(v.number()),
-          daysPerWeek: v.optional(v.number()),
-        })
-      ),
-    })
-  ),
+  returns: v.array(supplementDoc),
   async handler(ctx, { householdId }) {
     await requireMembership(ctx, householdId);
-    const supplements = await ctx.db
+    return await ctx.db
       .query("supplements")
       .withIndex("by_household", (q) => q.eq("householdId", householdId))
       .collect();
-
-    return await Promise.all(
-      supplements.map(async (s) => {
-        // Disabled people are paused — exclude their dosages from the rate.
-        const activeDosages = await getActiveDosages(ctx, s._id);
-        const dosages = await getPersonActiveDosages(ctx, s._id);
-        const bottles = await ctx.db
-          .query("bottles")
-          .withIndex("by_supplement", (q) => q.eq("supplementId", s._id))
-          .collect();
-        return {
-          ...s,
-          consumptionRate: getConsumptionRate(activeDosages),
-          bottles,
-          dosages,
-        };
-      })
-    );
   },
 });
 
@@ -213,6 +236,7 @@ export const create = mutation({
           ? Math.max(0, Math.min(b.remaining, b.count))
           : b.count;
       await ctx.db.insert("bottles", {
+        householdId: args.householdId,
         supplementId,
         count: b.count,
         price: b.price,
@@ -235,6 +259,8 @@ export const create = mutation({
         supplementIds: [supplementId],
         dosages: newGroup.dosages,
       });
+    } else {
+      await refreshForecastCacheFor(ctx, supplementId);
     }
 
     return supplementId;

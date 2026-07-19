@@ -4,8 +4,9 @@ import { Doc, Id } from "./_generated/dataModel";
 import {
   reanchorSupplement,
   reanchorGroup,
-  getActiveDosages,
-  getPersonActiveDosages,
+  classifyDosagesForSupplement,
+  refreshForecastCacheFor,
+  refreshForecastCacheForGroup,
 } from "./consumption";
 import { getDosageWeekly, getGroupRate } from "../lib/supplement-utils";
 import {
@@ -40,21 +41,17 @@ async function buildGroupView(ctx: QueryCtx, g: Doc<"groups">) {
     })
   );
 
+  // One dosages pass per member: rate, person-active dosages, and takers.
   const weeklies: { personId: string; weekly: number }[] = [];
   const dosages: Doc<"dosages">[] = [];
+  const takerWeekly = new Map<string, number>();
   for (const m of members) {
-    for (const d of await getActiveDosages(ctx, m._id)) {
+    const classified = await classifyDosagesForSupplement(ctx, m._id);
+    dosages.push(...classified.personActive);
+    for (const d of classified.activeForRate) {
       weeklies.push({ personId: d.personId, weekly: getDosageWeekly(d) });
     }
-    dosages.push(...(await getPersonActiveDosages(ctx, m._id)));
-  }
-
-  const takerWeekly = new Map<string, number>();
-  for (const { supplement } of memberData) {
-    for (const d of await ctx.db
-      .query("dosages")
-      .withIndex("by_supplement", (q) => q.eq("supplementId", supplement._id))
-      .collect()) {
+    for (const d of classified.all) {
       const w = getDosageWeekly(d);
       takerWeekly.set(
         d.personId,
@@ -101,9 +98,11 @@ export async function setMemberDosages(
     .withIndex("by_supplement", (q) => q.eq("supplementId", supplementId))
     .collect();
   for (const d of existing) await ctx.db.delete(d._id);
+  const supplement = await ctx.db.get(supplementId);
   for (const d of dosages) {
     if (d.pillsPerWeek > 0) {
       await ctx.db.insert("dosages", {
+        householdId: supplement?.householdId,
         supplementId,
         personId: d.personId,
         pillsPerWeek: d.pillsPerWeek,
@@ -175,6 +174,7 @@ export async function createGroupFromSupplements(
     supplementIds,
     groupId
   );
+  await refreshForecastCacheForGroup(ctx, groupId);
   return groupId;
 }
 
@@ -213,6 +213,7 @@ export async function addSupplementToGroup(
     [supplementId],
     groupId
   );
+  await refreshForecastCacheForGroup(ctx, groupId);
 }
 
 /**
@@ -293,9 +294,15 @@ export async function detachSupplementFromGroup(
       survivor._id
     );
     await ctx.db.delete(group._id);
+    await refreshForecastCacheFor(ctx, survivor._id);
+    await refreshForecastCacheFor(ctx, supplementId);
   } else if (remaining.length === 0) {
     await deleteGroupSubjectLifecycle(ctx, group.householdId, group._id);
     await ctx.db.delete(group._id);
+    await refreshForecastCacheFor(ctx, supplementId);
+  } else {
+    await refreshForecastCacheForGroup(ctx, group._id);
+    await refreshForecastCacheFor(ctx, supplementId);
   }
 }
 
@@ -334,6 +341,7 @@ export const setDosage = mutation({
     await requireGroupAccess(ctx, groupId);
     await reanchorGroup(ctx, groupId);
     const members = await groupMembers(ctx, groupId);
+    const group = await ctx.db.get(groupId);
     for (const m of members) {
       const rows = await ctx.db
         .query("dosages")
@@ -344,6 +352,7 @@ export const setDosage = mutation({
         if (mine) await ctx.db.patch(mine._id, { pillsPerWeek });
         else
           await ctx.db.insert("dosages", {
+            householdId: group?.householdId ?? m.householdId,
             supplementId: m._id,
             personId,
             pillsPerWeek,
@@ -352,6 +361,7 @@ export const setDosage = mutation({
         await ctx.db.delete(mine._id);
       }
     }
+    await refreshForecastCacheForGroup(ctx, groupId);
   },
 });
 

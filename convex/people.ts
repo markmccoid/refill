@@ -1,8 +1,12 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
-import { reanchorSupplement } from "./consumption";
+import {
+  reanchorFor,
+  refreshForecastCacheFor,
+} from "./consumption";
 import { getDosageWeekly } from "../lib/supplement-utils";
 import { requireMembership, requirePersonAccess } from "./authz";
+import { Id } from "./_generated/dataModel";
 
 export const list = query({
   args: { householdId: v.id("households") },
@@ -89,11 +93,17 @@ export const disable = mutation({
       .query("dosages")
       .withIndex("by_person", (q) => q.eq("personId", id))
       .collect();
-    for (const d of dosages) {
-      await reanchorSupplement(ctx, d.supplementId);
+    const supplementIds = new Set<Id<"supplements">>(
+      dosages.map((d) => d.supplementId)
+    );
+    for (const supplementId of supplementIds) {
+      await reanchorFor(ctx, supplementId);
     }
 
     await ctx.db.patch(id, { status: "disabled", disabledAt: Date.now() });
+    for (const supplementId of supplementIds) {
+      await refreshForecastCacheFor(ctx, supplementId);
+    }
   },
 });
 
@@ -112,11 +122,17 @@ export const enable = mutation({
       .query("dosages")
       .withIndex("by_person", (q) => q.eq("personId", id))
       .collect();
-    for (const d of dosages) {
-      await reanchorSupplement(ctx, d.supplementId);
+    const supplementIds = new Set<Id<"supplements">>(
+      dosages.map((d) => d.supplementId)
+    );
+    for (const supplementId of supplementIds) {
+      await reanchorFor(ctx, supplementId);
     }
 
     await ctx.db.patch(id, { status: "active", disabledAt: undefined });
+    for (const supplementId of supplementIds) {
+      await refreshForecastCacheFor(ctx, supplementId);
+    }
   },
 });
 
@@ -137,11 +153,19 @@ export const remove = mutation({
       .query("dosages")
       .withIndex("by_person", (q) => q.eq("personId", id))
       .collect();
+    const supplementIds = new Set<Id<"supplements">>(
+      dosages.map((d) => d.supplementId)
+    );
+    for (const supplementId of supplementIds) {
+      await reanchorFor(ctx, supplementId);
+    }
     for (const d of dosages) {
-      await reanchorSupplement(ctx, d.supplementId);
       await ctx.db.delete(d._id);
     }
 
     await ctx.db.delete(id);
+    for (const supplementId of supplementIds) {
+      await refreshForecastCacheFor(ctx, supplementId);
+    }
   },
 });

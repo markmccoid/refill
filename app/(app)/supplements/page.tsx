@@ -59,12 +59,8 @@ function isAttention(status: SupplementStatus) {
 
 export default function SupplementsPage() {
   const householdId = useHousehold();
-  const supplements = useQuery(
-    api.supplements.list,
-    householdId ? { householdId } : "skip"
-  );
-  const groups = useQuery(
-    api.groups.list,
+  const inventory = useQuery(
+    api.inventory.listForHousehold,
     householdId ? { householdId } : "skip"
   );
   const people = useQuery(
@@ -78,12 +74,14 @@ export default function SupplementsPage() {
   const [filter, setFilter] = useState<Filter>("all");
   const [restocked, setRestocked] = useState<Set<string>>(new Set());
 
+  const supplements = inventory?.solos;
+  const groups = inventory?.groups;
+
   const subjects = useMemo((): Subject[] => {
     if (!supplements || !groups) return [];
-    const ungrouped = supplements.filter((s) => !s.groupId);
     const list: Subject[] = [];
 
-    for (const s of ungrouped) {
+    for (const s of supplements) {
       const { daysLeft, status } = getSupplementListMetrics(s);
       list.push({
         kind: "supplement",
@@ -124,7 +122,7 @@ export default function SupplementsPage() {
     return <div className="text-center py-12">Loading...</div>;
   }
 
-  const ungrouped = supplements.filter((s) => !s.groupId);
+  const ungrouped = supplements;
   const activePeople = people.filter((p) => p.status !== "disabled");
   const attentionCount = subjects.filter((s) => isAttention(s.status)).length;
   const q = search.trim().toLowerCase();

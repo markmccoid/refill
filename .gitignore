@@ -27,6 +27,10 @@ yarn-error.log*
 
 # local env files
 .env*.local
+.env.self-hosted
+
+# local Convex export backups (may contain PII)
+refill-prod-backup*.zip
 
 # vercel
 .vercel

@@ -1,6 +1,6 @@
 import { MutationCtx, mutation, query } from "./_generated/server";
 import { v } from "convex/values";
-import { reanchorFor } from "./consumption";
+import { reanchorFor, refreshForecastCacheFor } from "./consumption";
 import { requireSupplementAccess, requirePersonAccess } from "./authz";
 import { Doc, Id } from "./_generated/dataModel";
 import { getDosageWeekly, isDosagePaused } from "../lib/supplement-utils";
@@ -43,20 +43,24 @@ export const listBySupplementId = query({
       .query("dosages")
       .withIndex("by_supplement", (q) => q.eq("supplementId", supplementId))
       .collect();
-    const now = Date.now();
-    return await Promise.all(
-      dosages.map(async (d) => {
-        const person = await ctx.db.get(d.personId);
-        const personActive = !!person && person.status !== "disabled";
-        const dosagePaused = isDosagePaused(d, now);
-        return {
-          ...d,
-          personActive: personActive && !dosagePaused,
-          dosagePaused,
-          personDisabled: !personActive,
-        };
-      })
+    const personIds = [...new Set(dosages.map((d) => d.personId))];
+    const peopleById = new Map(
+      await Promise.all(
+        personIds.map(async (id) => [id, await ctx.db.get(id)] as const)
+      )
     );
+    const now = Date.now();
+    return dosages.map((d) => {
+      const person = peopleById.get(d.personId);
+      const personActive = !!person && person.status !== "disabled";
+      const dosagePaused = isDosagePaused(d, now);
+      return {
+        ...d,
+        personActive: personActive && !dosagePaused,
+        dosagePaused,
+        personDisabled: !personActive,
+      };
+    });
   },
 });
 
@@ -87,7 +91,10 @@ export const create = mutation({
     await requirePersonAccess(ctx, args.personId);
     // Re-anchor first: freeze on-hand at the old rate before the rate changes.
     await reanchorFor(ctx, args.supplementId);
-    const id = await ctx.db.insert("dosages", args);
+    const id = await ctx.db.insert("dosages", {
+      householdId: supplement.householdId,
+      ...args,
+    });
     await ctx.db.insert("dosageEvents", {
       householdId: supplement.householdId,
       dosageId: id,
@@ -97,6 +104,7 @@ export const create = mutation({
       occurredAt: Date.now(),
       nextPillsPerWeek: args.pillsPerWeek,
     });
+    await refreshForecastCacheFor(ctx, args.supplementId);
     return id;
   },
 });
@@ -117,6 +125,7 @@ export const update = mutation({
       previousPillsPerWeek,
       nextPillsPerWeek: updates.pillsPerWeek,
     });
+    await refreshForecastCacheFor(ctx, dosage.supplementId);
     return await ctx.db.get(id);
   },
 });
@@ -138,6 +147,7 @@ export const pause = mutation({
       pauseStartedAt: pausedAt,
       pauseUntil,
     });
+    await refreshForecastCacheFor(ctx, dosage.supplementId);
     return await ctx.db.get(id);
   },
 });
@@ -155,6 +165,7 @@ export const resume = mutation({
       pauseStartedAt: dosage.pausedAt,
       pauseUntil: dosage.pauseUntil,
     });
+    await refreshForecastCacheFor(ctx, dosage.supplementId);
     return await ctx.db.get(id);
   },
 });
@@ -186,6 +197,9 @@ export const pauseAllForPerson = mutation({
         pauseUntil,
       });
     }
+    for (const supplementId of supplementIds) {
+      await refreshForecastCacheFor(ctx, supplementId);
+    }
     return { paused: activeDosages.length };
   },
 });
@@ -201,5 +215,6 @@ export const remove = mutation({
       previousPillsPerWeek: getDosageWeekly(dosage),
     });
     await ctx.db.delete(id);
+    await refreshForecastCacheFor(ctx, dosage.supplementId);
   },
 });

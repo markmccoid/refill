@@ -1,7 +1,13 @@
 import { mutation, query, MutationCtx, QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { Doc, Id } from "./_generated/dataModel";
-import { getActiveDosages, getPersonActiveDosages, reanchorFor } from "./consumption";
+import {
+  classifyDosagesWithPeople,
+  daysLeftFromCache,
+  loadHouseholdLedger,
+  reanchorFor,
+  refreshForecastCacheFor,
+} from "./consumption";
 import { requireMembership, requireSupplementAccess } from "./authz";
 import {
   addSupplementToGroup,
@@ -62,48 +68,41 @@ async function getSubjectStates(
   ctx: QueryCtx | MutationCtx,
   householdId: Id<"households">
 ): Promise<SubjectState[]> {
-  const supplements = await ctx.db
-    .query("supplements")
-    .withIndex("by_household", (q) => q.eq("householdId", householdId))
-    .collect();
-  const groups = await ctx.db
-    .query("groups")
-    .withIndex("by_household", (q) => q.eq("householdId", householdId))
-    .collect();
-
-  const bottlesOf = new Map<Id<"supplements">, Doc<"bottles">[]>();
-  for (const s of supplements) {
-    bottlesOf.set(
-      s._id,
-      await ctx.db
-        .query("bottles")
-        .withIndex("by_supplement", (q) => q.eq("supplementId", s._id))
-        .collect()
-    );
-  }
+  const ledger = await loadHouseholdLedger(ctx, householdId);
+  const {
+    supplements,
+    groups,
+    bottlesBySupplement,
+    dosagesBySupplement,
+    peopleById,
+  } = ledger;
 
   const now = Date.now();
   const states: SubjectState[] = [];
 
   for (const s of supplements.filter((s) => !s.groupId)) {
-    const dosages = await getPersonActiveDosages(ctx, s._id);
-    const rate = getConsumptionRate(dosages, now);
-    const anchoredAt = s.anchoredAt ?? s.createdAt ?? now;
-    const ledger = getBottleStatesForDosages(
-      bottlesOf.get(s._id) ?? [],
-      anchoredAt,
-      dosages,
+    const classified = classifyDosagesWithPeople(
+      dosagesBySupplement.get(s._id) ?? [],
+      peopleById,
       now
     );
-    const days = getDaysLeft(ledger.onHand, rate);
+    const rate = getConsumptionRate(classified.activeForRate, now);
+    const anchoredAt = s.anchoredAt ?? s.createdAt ?? now;
+    const bottleLedger = getBottleStatesForDosages(
+      bottlesBySupplement.get(s._id) ?? [],
+      anchoredAt,
+      classified.personActive,
+      now
+    );
+    const days = getDaysLeft(bottleLedger.onHand, rate);
     states.push({
       kind: "supplement",
       supplementId: s._id,
       groupId: null,
       name: s.name,
       imageUrl: s.imageUrl ?? null,
-      onHand: ledger.onHand,
-      incomingCount: ledger.incomingCount,
+      onHand: bottleLedger.onHand,
+      incomingCount: bottleLedger.incomingCount,
       ratePerDay: rate,
       daysLeft: Number.isFinite(days) ? days : null,
       brands: [s],
@@ -116,34 +115,39 @@ async function getSubjectStates(
     const dosages = [];
     const weeklies: { personId: string; weekly: number }[] = [];
     for (const m of members) {
-      for (const d of await getPersonActiveDosages(ctx, m._id)) {
-        dosages.push(d);
-      }
-      for (const d of await getActiveDosages(ctx, m._id)) {
+      const classified = classifyDosagesWithPeople(
+        dosagesBySupplement.get(m._id) ?? [],
+        peopleById,
+        now
+      );
+      dosages.push(...classified.personActive);
+      for (const d of classified.activeForRate) {
         weeklies.push({ personId: d.personId, weekly: getDosageWeekly(d) });
       }
     }
     const rate = getGroupRate(weeklies);
-    const ledger = getGroupStateForDosages(
+    const groupLedger = getGroupStateForDosages(
       members.map((m) => ({
         supplementId: m._id as string,
-        bottles: bottlesOf.get(m._id) ?? [],
+        bottles: bottlesBySupplement.get(m._id) ?? [],
       })),
       g.anchoredAt,
       dosages,
       now
     );
     const open =
-      members.find((m) => m._id === ledger.openSupplementId) ?? members[0] ?? null;
-    const days = getDaysLeft(ledger.onHand, rate);
+      members.find((m) => m._id === groupLedger.openSupplementId) ??
+      members[0] ??
+      null;
+    const days = getDaysLeft(groupLedger.onHand, rate);
     states.push({
       kind: "group",
       supplementId: null,
       groupId: g._id,
       name: g.name,
       imageUrl: open?.imageUrl ?? null,
-      onHand: ledger.onHand,
-      incomingCount: ledger.incomingCount,
+      onHand: groupLedger.onHand,
+      incomingCount: groupLedger.incomingCount,
       ratePerDay: rate,
       daysLeft: Number.isFinite(days) ? days : null,
       brands: members,
@@ -272,6 +276,9 @@ const planItemValidator = v.object({
 /**
  * Urgency badge for the sidebar: subjects running out within the forecast
  * window that aren't on the active plan. Informs; never adds anything.
+ *
+ * Reads only subject docs + active plan items (forecast cache), not the full
+ * bottle/dosage ledger. Cache is refreshed on stock/rate mutations + daily cron.
  */
 export const badgeCount = query({
   args: { householdId: v.id("households") },
@@ -279,17 +286,76 @@ export const badgeCount = query({
   async handler(ctx, { householdId }) {
     await requireMembership(ctx, householdId);
     const { forecastWindowDays } = settingsOf(await ctx.db.get(householdId));
-    const states = await getSubjectStates(ctx, householdId);
-    const items = await activeItems(ctx, householdId);
+    const now = Date.now();
+    const [supplements, groups, items] = await Promise.all([
+      ctx.db
+        .query("supplements")
+        .withIndex("by_household", (q) => q.eq("householdId", householdId))
+        .collect(),
+      ctx.db
+        .query("groups")
+        .withIndex("by_household", (q) => q.eq("householdId", householdId))
+        .collect(),
+      activeItems(ctx, householdId),
+    ]);
     const onPlan = new Set(
       items.map((i) => (i.groupId ?? i.supplementId) as string)
     );
-    return states.filter(
-      (s) =>
-        s.daysLeft !== null &&
-        s.daysLeft <= forecastWindowDays &&
-        !onPlan.has((s.groupId ?? s.supplementId) as string)
-    ).length;
+
+    let urgent = 0;
+    for (const s of supplements.filter((x) => !x.groupId)) {
+      if (
+        s.forecastCachedAt === undefined ||
+        s.cachedOnHand === undefined ||
+        s.cachedIncomingCount === undefined ||
+        s.cachedRatePerDay === undefined
+      ) {
+        continue;
+      }
+      const daysLeft = daysLeftFromCache(
+        {
+          cachedOnHand: s.cachedOnHand,
+          cachedIncomingCount: s.cachedIncomingCount,
+          cachedRatePerDay: s.cachedRatePerDay,
+          forecastCachedAt: s.forecastCachedAt,
+        },
+        now
+      );
+      if (
+        daysLeft !== null &&
+        daysLeft <= forecastWindowDays &&
+        !onPlan.has(s._id)
+      ) {
+        urgent++;
+      }
+    }
+    for (const g of groups) {
+      if (
+        g.forecastCachedAt === undefined ||
+        g.cachedOnHand === undefined ||
+        g.cachedIncomingCount === undefined ||
+        g.cachedRatePerDay === undefined
+      ) {
+        continue;
+      }
+      const daysLeft = daysLeftFromCache(
+        {
+          cachedOnHand: g.cachedOnHand,
+          cachedIncomingCount: g.cachedIncomingCount,
+          cachedRatePerDay: g.cachedRatePerDay,
+          forecastCachedAt: g.forecastCachedAt,
+        },
+        now
+      );
+      if (
+        daysLeft !== null &&
+        daysLeft <= forecastWindowDays &&
+        !onPlan.has(g._id)
+      ) {
+        urgent++;
+      }
+    }
+    return urgent;
   },
 });
 
@@ -941,6 +1007,7 @@ export const markPurchased = mutation({
       await reanchorFor(ctx, destinationSupplementId);
       for (let i = 0; i < qty; i++) {
         await ctx.db.insert("bottles", {
+          householdId: retailer.householdId,
           supplementId: destinationSupplementId,
           count,
           price,
@@ -951,6 +1018,7 @@ export const markPurchased = mutation({
         });
       }
       await syncAnchorCache(ctx, destinationSupplementId);
+      await refreshForecastCacheFor(ctx, destinationSupplementId);
       await upsertSavedLink(
         ctx,
         item.householdId,

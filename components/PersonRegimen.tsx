@@ -45,7 +45,7 @@ export function PersonRegimen({
   householdId: Id<"households">;
   readOnly?: boolean;
 }) {
-  const supplements = useQuery(api.supplements.list, { householdId });
+  const supplements = useQuery(api.supplements.listBasic, { householdId });
   const dosages = useQuery(api.dosages.listByPersonId, { personId });
 
   const createDosage = useMutation(api.dosages.create);

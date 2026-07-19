@@ -6,6 +6,7 @@ import {
   getBottleBreakdown,
 } from "../lib/supplement-utils";
 import { seedHouseholdInCtx } from "./candidateSeeding";
+import { refreshForecastCachesForHousehold } from "./consumption";
 
 /**
  * One-time backfill to the consumption model. Idempotent — safe to re-run.
@@ -77,6 +78,7 @@ export const backfillBottles = internalMutation({
 
       // Open bottle first (oldest), then full sealed spares.
       await ctx.db.insert("bottles", {
+        householdId: s.householdId,
         supplementId: s._id,
         count: s.jarSize,
         price,
@@ -86,6 +88,7 @@ export const backfillBottles = internalMutation({
       created++;
       for (let i = 0; i < breakdown.sealedSpares; i++) {
         await ctx.db.insert("bottles", {
+          householdId: s.householdId,
           supplementId: s._id,
           count: s.jarSize,
           price,
@@ -212,5 +215,62 @@ export const seedAllHouseholds = internalMutation({
     }
 
     return { households, subjects, created };
+  },
+});
+
+/**
+ * Backfill householdId on bottles/dosages and seed forecast caches.
+ * Idempotent — safe to re-run. Run once after deploying the I/O efficiency schema:
+ *   npx convex run migrations:backfillHouseholdIdsAndForecastCaches
+ */
+export const backfillHouseholdIdsAndForecastCaches = internalMutation({
+  args: {},
+  returns: v.object({
+    bottles: v.number(),
+    dosages: v.number(),
+    households: v.number(),
+  }),
+  async handler(ctx) {
+    let bottles = 0;
+    let dosages = 0;
+
+    for (const b of await ctx.db.query("bottles").collect()) {
+      if (b.householdId !== undefined) continue;
+      const supplement = await ctx.db.get(b.supplementId);
+      if (!supplement) continue;
+      await ctx.db.patch(b._id, { householdId: supplement.householdId });
+      bottles++;
+    }
+
+    for (const d of await ctx.db.query("dosages").collect()) {
+      if (d.householdId !== undefined) continue;
+      const supplement = await ctx.db.get(d.supplementId);
+      if (!supplement) continue;
+      await ctx.db.patch(d._id, { householdId: supplement.householdId });
+      dosages++;
+    }
+
+    let households = 0;
+    for (const household of await ctx.db.query("households").collect()) {
+      await refreshForecastCachesForHousehold(ctx, household._id);
+      households++;
+    }
+
+    return { bottles, dosages, households };
+  },
+});
+
+/** Daily cron target: refresh forecast caches for every household. */
+export const refreshAllForecastCaches = internalMutation({
+  args: {},
+  returns: v.object({ households: v.number() }),
+  async handler(ctx) {
+    let households = 0;
+    const now = Date.now();
+    for (const household of await ctx.db.query("households").collect()) {
+      await refreshForecastCachesForHousehold(ctx, household._id, now);
+      households++;
+    }
+    return { households };
   },
 });

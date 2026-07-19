@@ -72,6 +72,13 @@
     @apply font-sans text-text antialiased;
   }
 
+  /* App routes use a fixed shell — lock the document so only .app-main scrolls. */
+  html:has([data-app-shell]),
+  body:has([data-app-shell]) {
+    height: 100%;
+    overflow: hidden;
+  }
+
   h1 {
     @apply text-2xl font-bold tracking-tight;
   }
@@ -211,6 +218,33 @@
 
 * {
   @apply border-border;
+}
+
+/* Main pane scrollbar — thin, token-tinted, appears only when needed. */
+.app-main {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--c-text-faint) / 0.45) transparent;
+}
+
+.app-main::-webkit-scrollbar {
+  width: 10px;
+}
+
+.app-main::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.app-main::-webkit-scrollbar-thumb {
+  background: rgb(var(--c-text-faint) / 0.35);
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+
+.app-main::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--c-text-muted) / 0.55);
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 
 /* Phone adaptation: keep the desktop shell untouched at md (768px) and up. */
