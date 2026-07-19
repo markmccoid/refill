@@ -55,11 +55,13 @@ export function RunOutTimeline({ rows }: { rows: TimelineRow[] }) {
   const pct = (t: number) => Math.max(0, Math.min(100, ((t - start) / span) * 100));
 
   // Month tick labels: the 1st of each month that falls after "now".
-  const ticks: { label: string; left: number }[] = [];
+  // Key by year+month so a multi-year horizon (e.g. two "Aug") is unique.
+  const ticks: { key: string; label: string; left: number }[] = [];
   let cursor = startOfMonth(new Date(now));
   while (cursor.getTime() <= horizonDate.getTime()) {
     if (cursor.getTime() >= start) {
       ticks.push({
+        key: `${cursor.getFullYear()}-${cursor.getMonth()}`,
         label: cursor.toLocaleDateString("en-US", { month: "short" }),
         left: pct(cursor.getTime()),
       });
@@ -86,7 +88,7 @@ export function RunOutTimeline({ rows }: { rows: TimelineRow[] }) {
         <div className="relative h-5">
           {ticks.map((t) => (
             <span
-              key={t.label}
+              key={t.key}
               className="absolute top-0 text-xs text-text-faint"
               style={{ left: `${t.left}%` }}
             >
