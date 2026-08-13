@@ -172,6 +172,11 @@ export default function SupplementsPage() {
         key={key}
         group={s.group}
         householdId={householdId!}
+        ungrouped={ungrouped.map((u) => ({
+          _id: u._id,
+          name: u.name,
+          brand: u.brand,
+        }))}
         showRestock={showRestock}
         restockLabel={label}
         onRestock={() => handleRestock(key, { groupId: s.group._id })}

@@ -536,6 +536,13 @@ export default function SupplementDetailPage() {
         </div>
       )}
 
+      {!group && (
+        <JoinGroupPanel
+          householdId={supplement.householdId}
+          supplementId={supplement._id}
+        />
+      )}
+
       {/* Main Info Card */}
       <div className="card p-6 space-y-4">
         {!isEditing && (supplement.iconId || supplement.imageUrl) && (
@@ -1327,6 +1334,74 @@ export default function SupplementDetailPage() {
         </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function JoinGroupPanel({
+  householdId,
+  supplementId,
+}: {
+  householdId: Id<"households">;
+  supplementId: Id<"supplements">;
+}) {
+  const groups = useQuery(api.groups.list, { householdId });
+  const addMember = useMutation(api.groups.addMember);
+  const [open, setOpen] = useState(false);
+  const [addingId, setAddingId] = useState<string | null>(null);
+
+  if (!groups || groups.length === 0) return null;
+
+  return (
+    <div className="border border-dashed border-border-strong rounded-lg px-4 py-3 space-y-2">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm text-text-muted">
+          Interchangeable with a group you already track?
+        </p>
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="text-sm font-semibold text-primary hover:underline whitespace-nowrap"
+        >
+          {open ? "Cancel" : "Move into a group"}
+        </button>
+      </div>
+      {open && (
+        <div className="space-y-2">
+          <p className="text-xs text-text-muted">
+            This brand keeps its bottles and facts. It inherits the group&apos;s
+            dosage.
+          </p>
+          {groups.map((g) => (
+            <button
+              key={g._id}
+              type="button"
+              disabled={addingId !== null}
+              onClick={async () => {
+                setAddingId(g._id);
+                try {
+                  await addMember({ groupId: g._id, supplementId });
+                } finally {
+                  setAddingId(null);
+                }
+              }}
+              className="w-full flex items-center justify-between gap-3 border border-border-strong rounded-lg p-2.5 bg-surface text-left hover:bg-surface-alt disabled:opacity-40"
+            >
+              <span className="text-sm font-medium truncate">
+                {g.name}
+                <span className="text-text-muted font-normal">
+                  {" "}
+                  · {g.members.length} brand
+                  {g.members.length === 1 ? "" : "s"}
+                </span>
+              </span>
+              <span className="text-xs font-semibold text-primary flex-shrink-0">
+                {addingId === g._id ? "Moving…" : "Move in"}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -44,6 +44,12 @@ interface GroupView {
   takers: { personId: Id<"people">; pillsPerWeek: number }[];
 }
 
+interface UngroupedCandidate {
+  _id: Id<"supplements">;
+  name: string;
+  brand?: string;
+}
+
 type MemberState = "open" | "next" | "incoming" | "empty";
 
 function shortBrand(m: GroupMemberView): string {
@@ -82,22 +88,27 @@ export function getGroupListMetrics(group: GroupView) {
 export function GroupListItem({
   group,
   householdId,
+  ungrouped = [],
   showRestock,
   restockLabel = "Restock",
   onRestock,
 }: {
   group: GroupView;
   householdId: Id<"households">;
+  ungrouped?: UngroupedCandidate[];
   showRestock?: boolean;
   restockLabel?: string;
   onRestock?: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [editingDosage, setEditingDosage] = useState(false);
+  const [addingBrand, setAddingBrand] = useState(false);
+  const [addingId, setAddingId] = useState<string | null>(null);
 
   const people = useQuery(api.people.list, { householdId });
   const setDosage = useMutation(api.groups.setDosage);
   const removeMember = useMutation(api.groups.removeMember);
+  const addMember = useMutation(api.groups.addMember);
 
   const rate = group.consumptionRate;
   const { daysLeft, status, ledger } = getGroupListMetrics(group);
@@ -348,21 +359,84 @@ export function GroupListItem({
               )}
             </p>
             <div className="flex gap-2">
-              <Link
-                href={`/supplements/new?groupId=${group._id}`}
-                className="text-sm font-semibold text-primary hover:underline px-1"
-              >
-                ＋ Add a brand
-              </Link>
               <button
                 type="button"
-                onClick={() => setEditingDosage((v) => !v)}
+                onClick={() => {
+                  setAddingBrand((v) => !v);
+                  setEditingDosage(false);
+                }}
+                className="text-sm font-semibold text-primary hover:underline px-1"
+              >
+                {addingBrand ? "Done" : "＋ Add a brand"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingDosage((v) => !v);
+                  setAddingBrand(false);
+                }}
                 className="text-sm font-semibold text-primary hover:underline px-1"
               >
                 {editingDosage ? "Done" : "Edit dosage"}
               </button>
             </div>
           </div>
+
+          {addingBrand && (
+            <div className="space-y-2">
+              <p className="text-xs text-text-muted">
+                Move an existing supplement in, or create a new brand. It
+                inherits this group&apos;s dosage.
+              </p>
+              {ungrouped.length === 0 ? (
+                <p className="text-sm text-text-muted">
+                  No ungrouped supplements to move in.
+                </p>
+              ) : (
+                <div className="space-y-1.5">
+                  {ungrouped.map((s) => (
+                    <button
+                      key={s._id}
+                      type="button"
+                      disabled={addingId !== null}
+                      onClick={async () => {
+                        setAddingId(s._id);
+                        try {
+                          await addMember({
+                            groupId: group._id,
+                            supplementId: s._id,
+                          });
+                          setAddingBrand(false);
+                        } finally {
+                          setAddingId(null);
+                        }
+                      }}
+                      className="w-full flex items-center justify-between gap-3 border border-border-strong rounded-lg p-2.5 bg-surface text-left hover:bg-surface-alt disabled:opacity-40"
+                    >
+                      <span className="text-sm font-medium truncate">
+                        {s.name}
+                        {s.brand && (
+                          <span className="text-text-muted font-normal">
+                            {" "}
+                            · {s.brand}
+                          </span>
+                        )}
+                      </span>
+                      <span className="text-xs font-semibold text-primary flex-shrink-0">
+                        {addingId === s._id ? "Adding…" : "Move in"}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              <Link
+                href={`/supplements/new?groupId=${group._id}`}
+                className="inline-block text-sm font-semibold text-primary hover:underline px-1"
+              >
+                ＋ Create a new brand instead
+              </Link>
+            </div>
+          )}
 
           {editingDosage && (
             <div className="space-y-3">
