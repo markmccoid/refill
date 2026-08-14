@@ -93,6 +93,41 @@ export type HouseholdLedger = {
 
 type LedgerChildTable = "bottles" | "dosages";
 
+/** Literal table names so Convex can type `by_household` / `by_supplement`. */
+async function queryChildByHousehold<Table extends LedgerChildTable>(
+  ctx: DbCtx,
+  table: Table,
+  householdId: Id<"households">
+): Promise<Doc<Table>[]> {
+  if (table === "bottles") {
+    return (await ctx.db
+      .query("bottles")
+      .withIndex("by_household", (q) => q.eq("householdId", householdId))
+      .collect()) as unknown as Doc<Table>[];
+  }
+  return (await ctx.db
+    .query("dosages")
+    .withIndex("by_household", (q) => q.eq("householdId", householdId))
+    .collect()) as unknown as Doc<Table>[];
+}
+
+async function queryChildBySupplement<Table extends LedgerChildTable>(
+  ctx: DbCtx,
+  table: Table,
+  supplementId: Id<"supplements">
+): Promise<Doc<Table>[]> {
+  if (table === "bottles") {
+    return (await ctx.db
+      .query("bottles")
+      .withIndex("by_supplement", (q) => q.eq("supplementId", supplementId))
+      .collect()) as unknown as Doc<Table>[];
+  }
+  return (await ctx.db
+    .query("dosages")
+    .withIndex("by_supplement", (q) => q.eq("supplementId", supplementId))
+    .collect()) as unknown as Doc<Table>[];
+}
+
 /**
  * Load bottles/dosages by the household index, then fill gaps from
  * `by_supplement`. Rows created before `householdId` was denormalized are
@@ -111,10 +146,7 @@ async function loadChildDocsForSupplements<Table extends LedgerChildTable>(
   const bySupplementId = new Map<Id<"supplements">, Doc<Table>[]>();
   for (const s of supplements) bySupplementId.set(s._id, []);
 
-  const fromHousehold = (await ctx.db
-    .query(table)
-    .withIndex("by_household", (q) => q.eq("householdId", householdId))
-    .collect()) as Doc<Table>[];
+  const fromHousehold = await queryChildByHousehold(ctx, table, householdId);
   for (const doc of fromHousehold) {
     const list = bySupplementId.get(doc.supplementId);
     if (list) list.push(doc);
@@ -125,13 +157,7 @@ async function loadChildDocsForSupplements<Table extends LedgerChildTable>(
     (s) => (bySupplementId.get(s._id)?.length ?? 0) === 0
   );
   const fallbacks = await Promise.all(
-    missing.map(
-      (s) =>
-        ctx.db
-          .query(table)
-          .withIndex("by_supplement", (q) => q.eq("supplementId", s._id))
-          .collect() as Promise<Doc<Table>[]>
-    )
+    missing.map((s) => queryChildBySupplement(ctx, table, s._id))
   );
 
   let householdIndexIncomplete = false;
@@ -149,10 +175,7 @@ async function loadChildDocsForSupplements<Table extends LedgerChildTable>(
         .map(async (s) => {
           bySupplementId.set(
             s._id,
-            (await ctx.db
-              .query(table)
-              .withIndex("by_supplement", (q) => q.eq("supplementId", s._id))
-              .collect()) as Doc<Table>[]
+            await queryChildBySupplement(ctx, table, s._id)
           );
         })
     );
