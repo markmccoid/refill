@@ -313,7 +313,11 @@ export function PersonRegimen({
                     pauseControls(() => pauseOne(dosage._id), "Pause")}
                   {isEditing && (
                     <div className="mt-3 space-y-3 border-t border-border-strong pt-3">
-                      <DosageInput value={draft} onChange={setDraft} />
+                      <DosageInput
+                        value={draft}
+                        onChange={setDraft}
+                        form={s.form}
+                      />
                       <div className="flex gap-2">
                         <button
                           onClick={() => saveEdit(dosage._id)}
@@ -417,7 +421,11 @@ export function PersonRegimen({
                     </div>
                     {isAdding && (
                       <div className="mt-3 space-y-3 border-t border-border-strong pt-3">
-                        <DosageInput value={draft} onChange={setDraft} />
+                        <DosageInput
+                          value={draft}
+                          onChange={setDraft}
+                          form={s.form}
+                        />
                         <div className="flex gap-2">
                           <button
                             onClick={() => add(s._id)}

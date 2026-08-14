@@ -137,15 +137,21 @@ export function GroupListItem({
       times.length ? Math.min(...times) : Infinity
     );
   }
-  const orderedMembers = [...group.members].sort(
-    (a, b) =>
-      (earliestByMember.get(a.supplement._id) ?? 0) -
-      (earliestByMember.get(b.supplement._id) ?? 0)
-  );
 
   const isManual = group.drainMode === "manualOpen";
   const openIdSet = new Set(ledger.openSupplementIds);
-  const openMembers = group.members.filter((m) =>
+  const orderedMembers = [...group.members].sort((a, b) => {
+    if (isManual) {
+      const aOpen = openIdSet.has(a.supplement._id) ? 0 : 1;
+      const bOpen = openIdSet.has(b.supplement._id) ? 0 : 1;
+      if (aOpen !== bOpen) return aOpen - bOpen;
+    }
+    return (
+      (earliestByMember.get(a.supplement._id) ?? 0) -
+      (earliestByMember.get(b.supplement._id) ?? 0)
+    );
+  });
+  const openMembers = orderedMembers.filter((m) =>
     openIdSet.has(m.supplement._id)
   );
 
@@ -402,6 +408,10 @@ export function GroupListItem({
                             isBottleAvailable(s.bottle.purchasedAt) &&
                             s.remaining > 0
                         )
+                        .sort((a, b) => {
+                          if (a.isOpen !== b.isOpen) return a.isOpen ? -1 : 1;
+                          return a.bottle.purchasedAt - b.bottle.purchasedAt;
+                        })
                         .map((s) => {
                           const bottleId = s.bottle._id as
                             | Id<"bottles">
@@ -477,57 +487,57 @@ export function GroupListItem({
 
           {addingBrand && (
             <div className="space-y-2">
-              <p className="text-xs text-text-muted">
-                Move an existing supplement in, or create a new brand. It
-                inherits this group&apos;s dosage.
-              </p>
-              {ungrouped.length === 0 ? (
-                <p className="text-sm text-text-muted">
-                  No ungrouped supplements to move in.
-                </p>
-              ) : (
-                <div className="space-y-1.5">
-                  {ungrouped.map((s) => (
-                    <button
-                      key={s._id}
-                      type="button"
-                      disabled={addingId !== null}
-                      onClick={async () => {
-                        setAddingId(s._id);
-                        try {
-                          await addMember({
-                            groupId: group._id,
-                            supplementId: s._id,
-                          });
-                          setAddingBrand(false);
-                        } finally {
-                          setAddingId(null);
-                        }
-                      }}
-                      className="w-full flex items-center justify-between gap-3 border border-border-strong rounded-lg p-2.5 bg-surface text-left hover:bg-surface-alt disabled:opacity-40"
-                    >
-                      <span className="text-sm font-medium truncate">
-                        {s.name}
-                        {s.brand && (
-                          <span className="text-text-muted font-normal">
-                            {" "}
-                            · {s.brand}
-                          </span>
-                        )}
-                      </span>
-                      <span className="text-xs font-semibold text-primary flex-shrink-0">
-                        {addingId === s._id ? "Adding…" : "Move in"}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
               <Link
                 href={`/supplements/new?groupId=${group._id}`}
-                className="inline-block text-sm font-semibold text-primary hover:underline px-1"
+                className="w-full flex items-center justify-between gap-3 border border-border-strong rounded-lg p-2.5 bg-surface text-left hover:bg-surface-alt"
               >
-                ＋ Create a new brand instead
+                <span className="text-sm font-medium">＋ Create a new brand</span>
+                <span className="text-xs font-semibold text-primary flex-shrink-0">
+                  New
+                </span>
               </Link>
+              {ungrouped.length > 0 && (
+                <details className="border border-border-strong rounded-lg bg-surface">
+                  <summary className="cursor-pointer text-sm font-medium px-2.5 py-2.5 text-text-muted">
+                    Move in an existing supplement ({ungrouped.length})
+                  </summary>
+                  <div className="space-y-1.5 px-2 pb-2">
+                    {ungrouped.map((s) => (
+                      <button
+                        key={s._id}
+                        type="button"
+                        disabled={addingId !== null}
+                        onClick={async () => {
+                          setAddingId(s._id);
+                          try {
+                            await addMember({
+                              groupId: group._id,
+                              supplementId: s._id,
+                            });
+                            setAddingBrand(false);
+                          } finally {
+                            setAddingId(null);
+                          }
+                        }}
+                        className="w-full flex items-center justify-between gap-3 border border-border-strong rounded-lg p-2.5 bg-surface text-left hover:bg-surface-alt disabled:opacity-40"
+                      >
+                        <span className="text-sm font-medium truncate">
+                          {s.name}
+                          {s.brand && (
+                            <span className="text-text-muted font-normal">
+                              {" "}
+                              · {s.brand}
+                            </span>
+                          )}
+                        </span>
+                        <span className="text-xs font-semibold text-primary flex-shrink-0">
+                          {addingId === s._id ? "Adding…" : "Move in"}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </details>
+              )}
             </div>
           )}
 

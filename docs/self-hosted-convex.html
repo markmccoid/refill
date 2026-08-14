@@ -1,0 +1,992 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Refill · Self-Hosted Convex Runbook</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Sora:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&display=swap" rel="stylesheet" />
+  <script type="module">
+    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: "base",
+      themeVariables: {
+        primaryColor: "#dce8e0",
+        primaryTextColor: "#1a2420",
+        primaryBorderColor: "#2f5d4a",
+        secondaryColor: "#f3efe6",
+        tertiaryColor: "#e8f0f4",
+        lineColor: "#3d4a44",
+        fontFamily: "Sora, sans-serif",
+        fontSize: "14px",
+      },
+      flowchart: { curve: "basis", padding: 16 },
+    });
+  </script>
+  <style>
+    :root {
+      --ink: #1a2420;
+      --ink-soft: #3d4a44;
+      --muted: #6b7870;
+      --paper: #f4f1ea;
+      --paper-2: #eae6db;
+      --panel: #faf8f3;
+      --line: #c9c2b4;
+      --forest: #2f5d4a;
+      --forest-deep: #1e3d31;
+      --signal: #c45c26;
+      --sky: #3a6f8a;
+      --ok: #2f5d4a;
+      --warn: #9a6b12;
+      --code-bg: #1e2824;
+      --code-fg: #e8efe9;
+      --mono: "IBM Plex Mono", ui-monospace, monospace;
+      --sans: "Sora", system-ui, sans-serif;
+      --serif: "Source Serif 4", Georgia, serif;
+      --max: 52rem;
+      --wide: 68rem;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      font-family: var(--sans);
+      font-size: 16px;
+      line-height: 1.55;
+      background:
+        radial-gradient(ellipse 80% 50% at 10% -10%, #d9e6df 0%, transparent 55%),
+        radial-gradient(ellipse 60% 40% at 100% 0%, #e5ddd0 0%, transparent 45%),
+        linear-gradient(180deg, var(--paper) 0%, var(--paper-2) 100%);
+      min-height: 100vh;
+    }
+
+    a { color: var(--forest-deep); text-underline-offset: 3px; }
+    a:hover { color: var(--signal); }
+
+    .wrap {
+      width: min(100% - 2rem, var(--wide));
+      margin-inline: auto;
+      padding-block: 2.5rem 5rem;
+    }
+
+    header.hero {
+      max-width: var(--max);
+      padding-bottom: 2rem;
+      border-bottom: 1px solid var(--line);
+      margin-bottom: 2.5rem;
+    }
+
+    .eyebrow {
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--forest);
+      margin: 0 0 0.75rem;
+    }
+
+    h1 {
+      font-family: var(--serif);
+      font-weight: 700;
+      font-size: clamp(2rem, 4vw, 2.85rem);
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+      margin: 0 0 0.85rem;
+    }
+
+    .lede {
+      font-size: 1.1rem;
+      color: var(--ink-soft);
+      max-width: 40rem;
+      margin: 0;
+    }
+
+    .hosts {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-top: 1.25rem;
+    }
+
+    .host-pill {
+      font-family: var(--mono);
+      font-size: 0.8rem;
+      padding: 0.35rem 0.65rem;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-left: 3px solid var(--forest);
+    }
+
+    .host-pill.site { border-left-color: var(--sky); }
+
+    nav.toc {
+      display: grid;
+      gap: 0.35rem;
+      margin: 2rem 0 0;
+      max-width: var(--max);
+    }
+
+    nav.toc a {
+      font-size: 0.95rem;
+      text-decoration: none;
+      color: var(--ink-soft);
+      padding: 0.2rem 0;
+    }
+    nav.toc a:hover { color: var(--signal); }
+    nav.toc span {
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      color: var(--muted);
+      margin-right: 0.55rem;
+    }
+
+    section {
+      margin-block: 3rem;
+      max-width: var(--max);
+    }
+
+    section.wide { max-width: var(--wide); }
+
+    h2 {
+      font-family: var(--serif);
+      font-size: 1.65rem;
+      font-weight: 700;
+      letter-spacing: -0.015em;
+      margin: 0 0 0.75rem;
+      scroll-margin-top: 1.5rem;
+    }
+
+    h3 {
+      font-family: var(--sans);
+      font-size: 1.05rem;
+      font-weight: 600;
+      margin: 1.75rem 0 0.6rem;
+      color: var(--forest-deep);
+    }
+
+    p { margin: 0 0 1rem; color: var(--ink-soft); }
+    p strong, li strong { color: var(--ink); }
+
+    ol.steps {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      counter-reset: step;
+    }
+
+    ol.steps > li {
+      position: relative;
+      padding: 1.1rem 0 1.1rem 3rem;
+      border-top: 1px solid var(--line);
+      counter-increment: step;
+    }
+
+    ol.steps > li::before {
+      content: counter(step, decimal-leading-zero);
+      position: absolute;
+      left: 0;
+      top: 1.15rem;
+      font-family: var(--mono);
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: var(--signal);
+    }
+
+    .callout {
+      border: 1px solid var(--line);
+      border-left: 4px solid var(--warn);
+      background: color-mix(in oklab, #f5e6c8 55%, var(--panel));
+      padding: 0.9rem 1rem;
+      margin: 1.25rem 0;
+      font-size: 0.95rem;
+    }
+
+    .callout.ok { border-left-color: var(--ok); background: color-mix(in oklab, #cfe0d6 40%, var(--panel)); }
+    .callout.danger { border-left-color: var(--signal); background: color-mix(in oklab, #f0d5c8 35%, var(--panel)); }
+
+    .diagram-frame {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      padding: 1.25rem 1rem 0.75rem;
+      margin: 1.25rem 0 0.5rem;
+      overflow-x: auto;
+    }
+
+    .diagram-frame .mermaid {
+      display: flex;
+      justify-content: center;
+      min-width: 640px;
+    }
+
+    .diagram-caption {
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      color: var(--muted);
+      margin: 0 0 1.5rem;
+    }
+
+    /* Architecture SVG */
+    .arch-svg {
+      width: 100%;
+      height: auto;
+      display: block;
+      font-family: var(--sans);
+    }
+
+    .arch-svg .box {
+      fill: #faf8f3;
+      stroke: #3d4a44;
+      stroke-width: 1.5;
+    }
+
+    .arch-svg .box.live {
+      fill: #dce8e0;
+      stroke: #2f5d4a;
+      stroke-width: 2;
+    }
+
+    .arch-svg .box.edge {
+      fill: #e8f0f4;
+      stroke: #3a6f8a;
+    }
+
+    .arch-svg .box.host {
+      fill: #f3efe6;
+      stroke: #8a6a3d;
+    }
+
+    .arch-svg text {
+      fill: #1a2420;
+      font-size: 13px;
+    }
+
+    .arch-svg .label {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 11px;
+      fill: #3d4a44;
+    }
+
+    .arch-svg .title {
+      font-weight: 600;
+      font-size: 14px;
+    }
+
+    .arch-svg .flow {
+      fill: none;
+      stroke: #c45c26;
+      stroke-width: 2;
+      marker-end: url(#arrow);
+    }
+
+    .arch-svg .flow.soft {
+      stroke: #3a6f8a;
+      stroke-dasharray: 5 4;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem 1.5rem;
+      margin: 0.75rem 0 1.5rem;
+      font-size: 0.85rem;
+      color: var(--ink-soft);
+    }
+
+    .legend i {
+      display: inline-block;
+      width: 1.1rem;
+      height: 0.55rem;
+      margin-right: 0.4rem;
+      vertical-align: middle;
+      border-radius: 1px;
+    }
+
+    .legend .live i { background: var(--forest); }
+    .legend .tunnel i { background: var(--sky); }
+    .legend .cli i {
+      background: transparent;
+      border-top: 2px dashed var(--sky);
+      height: 0;
+      margin-top: 0.25rem;
+    }
+
+    /* Checklists */
+    .env-grid {
+      display: grid;
+      gap: 1.25rem;
+    }
+
+    @media (min-width: 900px) {
+      .env-grid { grid-template-columns: 1fr 1fr; }
+    }
+
+    .env-block {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      padding: 1.1rem 1.15rem 1.25rem;
+    }
+
+    .env-block h3 {
+      margin: 0 0 0.35rem;
+      font-size: 1rem;
+    }
+
+    .env-block .where {
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      color: var(--muted);
+      margin-bottom: 0.85rem;
+    }
+
+    .env-block ul {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+
+    .env-block li {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 0.55rem 0.65rem;
+      padding: 0.55rem 0;
+      border-top: 1px solid color-mix(in oklab, var(--line) 70%, transparent);
+      font-size: 0.9rem;
+      align-items: start;
+    }
+
+    .env-block li:first-of-type { border-top: none; }
+
+    .env-block input[type="checkbox"] {
+      margin-top: 0.2rem;
+      accent-color: var(--forest);
+      width: 1rem;
+      height: 1rem;
+    }
+
+    .env-block code {
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      background: color-mix(in oklab, var(--paper-2) 80%, white);
+      padding: 0.1rem 0.3rem;
+      word-break: break-all;
+    }
+
+    .env-block .val {
+      display: block;
+      margin-top: 0.25rem;
+      color: var(--muted);
+      font-size: 0.8rem;
+      font-family: var(--mono);
+      word-break: break-all;
+    }
+
+    .env-block.span2 { grid-column: 1 / -1; }
+
+    .env-block .note {
+      margin-top: 0.75rem;
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+
+    pre {
+      margin: 0.75rem 0 0;
+      padding: 1rem 1.1rem;
+      background: var(--code-bg);
+      color: var(--code-fg);
+      overflow-x: auto;
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      line-height: 1.5;
+      border: 1px solid #2a3631;
+    }
+
+    pre .c { color: #8aa394; }
+    pre .k { color: #d4a574; }
+    pre .s { color: #9ec3b0; }
+
+    .copy-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+
+    .copy-row p {
+      margin: 0;
+      font-size: 0.9rem;
+    }
+
+    button.copy {
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      padding: 0.4rem 0.7rem;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      color: var(--ink);
+      cursor: pointer;
+    }
+
+    button.copy:hover { border-color: var(--forest); color: var(--forest-deep); }
+
+    footer {
+      max-width: var(--max);
+      margin-top: 3rem;
+      padding-top: 1.25rem;
+      border-top: 1px solid var(--line);
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="hero">
+      <p class="eyebrow">Refill · Operations runbook</p>
+      <h1>Pointing Refill at self-hosted Convex</h1>
+      <p class="lede">
+        Production data and functions live on your Linux host behind Cloudflare.
+        Vercel only serves the Next.js UI and deploys Convex functions to that
+        self-hosted backend — not Convex Cloud.
+      </p>
+      <div class="hosts">
+        <span class="host-pill">https://convex.mccoidco.xyz</span>
+        <span class="host-pill site">https://convex-site.mccoidco.xyz</span>
+      </div>
+      <nav class="toc" aria-label="Contents">
+        <a href="#architecture"><span>01</span> Architecture</a>
+        <a href="#data-flow"><span>02</span> Request &amp; deploy paths</a>
+        <a href="#walkthrough"><span>03</span> Cutover walkthrough</a>
+        <a href="#env-checklist"><span>04</span> Environment variable checklists</a>
+        <a href="#jwt-script"><span>05</span> JWT / JWKS key script</a>
+        <a href="#verify"><span>06</span> Verify you’re on self-hosted</a>
+      </nav>
+    </header>
+
+    <!-- ========== ARCHITECTURE ========== -->
+    <section class="wide" id="architecture">
+      <h2>Architecture</h2>
+      <p>
+        Four places matter: your <strong>dev laptop</strong>, the
+        <strong>self-hosted Convex</strong> Docker stack, <strong>Cloudflare Tunnel</strong>
+        (public HTTPS), and <strong>Vercel</strong> (Next.js). Convex Cloud can stay
+        idle for rollback; it is not on the live path once cut over.
+      </p>
+
+      <div class="diagram-frame" aria-label="System architecture diagram">
+        <svg class="arch-svg" viewBox="0 0 960 520" role="img" aria-labelledby="archTitle archDesc">
+          <title id="archTitle">Self-hosted Convex topology</title>
+          <desc id="archDesc">
+            Laptop and Vercel talk through Cloudflare tunnels to Convex API and site
+            ports on the Linux host. Local Docker volume holds the database; NAS is backup only.
+          </desc>
+          <defs>
+            <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L6,3 L0,6 Z" fill="#c45c26" />
+            </marker>
+            <marker id="arrowBlue" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L6,3 L0,6 Z" fill="#3a6f8a" />
+            </marker>
+          </defs>
+
+          <!-- Laptop -->
+          <rect class="box" x="40" y="40" width="200" height="120" rx="4" />
+          <text class="title" x="56" y="68">Dev laptop</text>
+          <text class="label" x="56" y="92">npm run dev</text>
+          <text class="label" x="56" y="110">.env.local</text>
+          <text class="label" x="56" y="128">npx convex deploy / env</text>
+
+          <!-- Vercel -->
+          <rect class="box" x="40" y="220" width="200" height="120" rx="4" />
+          <text class="title" x="56" y="248">Vercel</text>
+          <text class="label" x="56" y="272">Next.js UI (prod)</text>
+          <text class="label" x="56" y="290">build: convex deploy</text>
+          <text class="label" x="56" y="308">+ npm run build</text>
+
+          <!-- Cloudflare -->
+          <rect class="box edge" x="320" y="100" width="220" height="200" rx="4" />
+          <text class="title" x="336" y="128">Cloudflare Tunnel</text>
+          <text class="label" x="336" y="156">convex.mccoidco.xyz</text>
+          <text class="label" x="336" y="174">→ host :3210 (API)</text>
+          <text class="label" x="336" y="206">convex-site.mccoidco.xyz</text>
+          <text class="label" x="336" y="224">→ host :3211 (HTTP / Auth)</text>
+          <text class="label" x="336" y="260">Public HTTPS edge</text>
+
+          <!-- Linux host -->
+          <rect class="box host" x="620" y="40" width="300" height="320" rx="4" />
+          <text class="title" x="636" y="68">Linux host (Docker)</text>
+          <rect class="box live" x="644" y="90" width="252" height="100" rx="3" />
+          <text class="title" x="660" y="118">Self-hosted Convex</text>
+          <text class="label" x="660" y="140">API :3210</text>
+          <text class="label" x="660" y="158">Site / HTTP :3211</text>
+          <text class="label" x="660" y="176">functions + auth</text>
+          <rect class="box" x="644" y="210" width="252" height="70" rx="3" />
+          <text class="title" x="660" y="238">Local Docker volume</text>
+          <text class="label" x="660" y="258">Live SQLite / DB files</text>
+          <rect class="box" x="644" y="298" width="252" height="42" rx="3" />
+          <text class="label" x="660" y="324">NAS mounts = backups only</text>
+
+          <!-- Idle cloud -->
+          <rect class="box" x="620" y="400" width="300" height="80" rx="4" opacity="0.75" />
+          <text class="title" x="636" y="428" opacity="0.75">Convex Cloud (idle)</text>
+          <text class="label" x="636" y="450" opacity="0.75">Keep for rollback — not live</text>
+
+          <!-- Flows -->
+          <path class="flow" d="M240,100 H320" />
+          <path class="flow" d="M240,280 H320" />
+          <path class="flow" d="M540,200 H620" />
+          <path class="flow soft" d="M140,160 V220" marker-end="url(#arrowBlue)" />
+        </svg>
+      </div>
+      <p class="diagram-caption">FIG 1 — Topology. Orange = live data/API path. Blue dashed = CLI deploy from laptop or Vercel build.</p>
+
+      <div class="legend">
+        <span class="live"><i></i>Live client ↔ API / site</span>
+        <span class="tunnel"><i></i>Cloudflare edge hostnames</span>
+        <span class="cli"><i></i>CLI / CI deploy of functions</span>
+      </div>
+    </section>
+
+    <!-- ========== DATA FLOW ========== -->
+    <section class="wide" id="data-flow">
+      <h2>Request &amp; deploy paths</h2>
+      <p>
+        Runtime traffic (browser queries/mutations) and deploy traffic (pushing
+        <code>convex/</code> functions) both end at the self-hosted backend, but
+        they use different credentials.
+      </p>
+
+      <h3>Runtime (browser → database)</h3>
+      <div class="diagram-frame">
+        <pre class="mermaid">
+flowchart LR
+  Browser["Browser<br/>Refill UI"]
+  VercelCDN["Vercel<br/>Next.js assets"]
+  CF["Cloudflare Tunnel"]
+  API["convex.mccoidco.xyz<br/>:3210 API"]
+  Site["convex-site.mccoidco.xyz<br/>:3211 Auth HTTP"]
+  DB[(Docker volume DB)]
+
+  Browser -->|"loads HTML/JS"| VercelCDN
+  Browser -->|"NEXT_PUBLIC_CONVEX_URL<br/>WebSocket / queries"| CF
+  Browser -->|"Auth HTTP routes"| CF
+  CF --> API
+  CF --> Site
+  API --> DB
+  Site --> API
+        </pre>
+      </div>
+      <p class="diagram-caption">FIG 2 — Runtime. Vercel hosts the UI only; all data goes to self-hosted Convex via Cloudflare.</p>
+
+      <h3>Deploy (functions → self-hosted)</h3>
+      <div class="diagram-frame">
+        <pre class="mermaid">
+flowchart TB
+  subgraph laptop [Dev laptop]
+    LocalEnv[".env.local<br/>CONVEX_SELF_HOSTED_*"]
+    CLI1["npx convex deploy<br/>or convex env set"]
+  end
+
+  subgraph vercel [Vercel build]
+    VercelEnv["Env:<br/>CONVEX_SELF_HOSTED_URL<br/>CONVEX_SELF_HOSTED_ADMIN_KEY"]
+    CLI2["npx convex deploy --cmd<br/>npm run build"]
+  end
+
+  Backend["Self-hosted Convex<br/>convex.mccoidco.xyz"]
+
+  LocalEnv --> CLI1 --> Backend
+  VercelEnv --> CLI2 --> Backend
+
+  CloudKey["CONVEX_DEPLOY_KEY<br/>Convex Cloud"] -.->|"must be removed"| X["Do not use"]
+        </pre>
+      </div>
+      <p class="diagram-caption">FIG 3 — Deploy. Self-hosted admin key replaces CONVEX_DEPLOY_KEY. Do not mix cloud and self-hosted deploy vars.</p>
+
+      <div class="callout danger">
+        <strong>Common mistake:</strong> leaving <code>CONVEX_DEPLOY_KEY</code> on Vercel
+        while only changing <code>NEXT_PUBLIC_CONVEX_URL</code>. The UI then talks to
+        self-hosted, but <code>convex deploy</code> still pushes functions to Convex Cloud
+        (or the CLI fails / targets the wrong place). Remove the cloud deploy key.
+      </div>
+    </section>
+
+    <!-- ========== WALKTHROUGH ========== -->
+    <section id="walkthrough">
+      <h2>Cutover walkthrough</h2>
+      <ol class="steps">
+        <li>
+          <strong>Run Convex on the Linux host</strong> (Docker). Expose API
+          <code>:3210</code> and site <code>:3211</code> on the host only — not
+          directly to the public internet.
+        </li>
+        <li>
+          <strong>Cloudflare Tunnel</strong> maps
+          <code>convex.mccoidco.xyz → :3210</code> and
+          <code>convex-site.mccoidco.xyz → :3211</code>. Confirm both hostnames
+          resolve and respond over HTTPS.
+        </li>
+        <li>
+          <strong>Generate an admin key</strong> on the host
+          (<code>./generate_admin_key.sh</code> inside the backend container).
+          Store it in a password manager — you need it for CLI and Vercel.
+        </li>
+        <li>
+          <strong>Point the laptop at self-hosted</strong> via
+          <code>.env.local</code> (see checklist). Remove or ignore cloud
+          <code>CONVEX_DEPLOYMENT</code> / <code>CONVEX_DEPLOY_KEY</code> so the
+          CLI cannot target cloud by accident.
+        </li>
+        <li>
+          <strong>Import data</strong> (export from cloud, strip broken
+          <code>generated_schema.jsonl</code> if needed, import into self-hosted).
+        </li>
+        <li>
+          <strong>Set Auth keys on the self-hosted deployment</strong> with
+          <code>node scripts/set-auth-keys.mjs</code> (below). Also set
+          <code>SITE_URL</code> to your Vercel production URL.
+        </li>
+        <li>
+          <strong>Deploy functions</strong> once from the laptop:
+          <code>npx convex deploy</code> (uses self-hosted env vars).
+        </li>
+        <li>
+          <strong>Update Vercel env</strong>: public Convex URLs + self-hosted
+          deploy pair; <em>delete</em> <code>CONVEX_DEPLOY_KEY</code>. Redeploy.
+        </li>
+        <li>
+          <strong>Smoke-test on cellular / incognito</strong>: sign-in, data
+          present, Network tab shows <code>convex.mccoidco.xyz</code> only.
+        </li>
+      </ol>
+    </section>
+
+    <!-- ========== ENV CHECKLISTS ========== -->
+    <section class="wide" id="env-checklist">
+      <h2>Environment variable checklists</h2>
+      <p>
+        Check off as you configure each location. Values below match the live
+        self-hosted cutover. Never commit admin keys or JWT private keys.
+      </p>
+
+      <div class="env-grid">
+        <!-- Laptop -->
+        <div class="env-block">
+          <h3>1 · Dev laptop — <code>.env.local</code></h3>
+          <p class="where">Repo root · local Next.js + Convex CLI</p>
+          <ul>
+            <li>
+              <input type="checkbox" id="l1" />
+              <label for="l1">
+                <code>NEXT_PUBLIC_CONVEX_URL</code>
+                <span class="val">https://convex.mccoidco.xyz</span>
+              </label>
+            </li>
+            <li>
+              <input type="checkbox" id="l2" />
+              <label for="l2">
+                <code>NEXT_PUBLIC_CONVEX_SITE_URL</code>
+                <span class="val">https://convex-site.mccoidco.xyz</span>
+              </label>
+            </li>
+            <li>
+              <input type="checkbox" id="l3" />
+              <label for="l3">
+                <code>CONVEX_SELF_HOSTED_URL</code>
+                <span class="val">https://convex.mccoidco.xyz</span>
+              </label>
+            </li>
+            <li>
+              <input type="checkbox" id="l4" />
+              <label for="l4">
+                <code>CONVEX_SELF_HOSTED_ADMIN_KEY</code>
+                <span class="val">admin key from generate_admin_key.sh</span>
+              </label>
+            </li>
+            <li>
+              <input type="checkbox" id="l5" />
+              <label for="l5">
+                <strong>Absent / unused:</strong>
+                <code>CONVEX_DEPLOY_KEY</code>, cloud <code>CONVEX_DEPLOYMENT</code>
+                <span class="val">Mixing cloud + self-hosted vars breaks the CLI</span>
+              </label>
+            </li>
+          </ul>
+          <p class="note">JWT keys do <em>not</em> go in <code>.env.local</code> — they live on the Convex deployment.</p>
+        </div>
+
+        <!-- Convex deployment -->
+        <div class="env-block">
+          <h3>2 · Self-hosted Convex deployment env</h3>
+          <p class="where">Set via <code>npx convex env set</code> or dashboard · not Vercel</p>
+          <ul>
+            <li>
+              <input type="checkbox" id="c1" />
+              <label for="c1">
+                <code>JWT_PRIVATE_KEY</code>
+                <span class="val">RS256 PKCS8 (from set-auth-keys.mjs)</span>
+              </label>
+            </li>
+            <li>
+              <input type="checkbox" id="c2" />
+              <label for="c2">
+                <code>JWKS</code>
+                <span class="val">JSON public key set (same script)</span>
+              </label>
+            </li>
+            <li>
+              <input type="checkbox" id="c3" />
+              <label for="c3">
+                <code>SITE_URL</code>
+                <span class="val">https://&lt;your-vercel-app&gt;.vercel.app/</span>
+              </label>
+            </li>
+            <li>
+              <input type="checkbox" id="c4" />
+              <label for="c4">
+                <code>CONVEX_SITE_URL</code> (usually auto)
+                <span class="val">https://convex-site.mccoidco.xyz — used by auth.config.ts</span>
+              </label>
+            </li>
+          </ul>
+          <p class="note">On Windows, prefer <code>node scripts/set-auth-keys.mjs</code> — PowerShell quote-stripping corrupts <code>JWKS</code>.</p>
+        </div>
+
+        <!-- Vercel -->
+        <div class="env-block">
+          <h3>3 · Vercel project env</h3>
+          <p class="where">Project Settings → Environment Variables · Production</p>
+          <ul>
+            <li>
+              <input type="checkbox" id="v1" />
+              <label for="v1">
+                <code>NEXT_PUBLIC_CONVEX_URL</code>
+                <span class="val">https://convex.mccoidco.xyz</span>
+              </label>
+            </li>
+            <li>
+              <input type="checkbox" id="v2" />
+              <label for="v2">
+                <code>NEXT_PUBLIC_CONVEX_SITE_URL</code>
+                <span class="val">https://convex-site.mccoidco.xyz</span>
+              </label>
+            </li>
+            <li>
+              <input type="checkbox" id="v3" />
+              <label for="v3">
+                <code>CONVEX_SELF_HOSTED_URL</code>
+                <span class="val">https://convex.mccoidco.xyz</span>
+              </label>
+            </li>
+            <li>
+              <input type="checkbox" id="v4" />
+              <label for="v4">
+                <code>CONVEX_SELF_HOSTED_ADMIN_KEY</code>
+                <span class="val">same admin key as laptop (server-only)</span>
+              </label>
+            </li>
+            <li>
+              <input type="checkbox" id="v5" />
+              <label for="v5">
+                <strong>Removed:</strong> <code>CONVEX_DEPLOY_KEY</code>
+                <span class="val">Cloud deploy key must not remain</span>
+              </label>
+            </li>
+            <li>
+              <input type="checkbox" id="v6" />
+              <label for="v6">
+                Build command
+                <span class="val">npx convex deploy --cmd 'npm run build'</span>
+              </label>
+            </li>
+          </ul>
+          <p class="note">Admin key is powerful — keep it out of <code>NEXT_PUBLIC_*</code> vars.</p>
+        </div>
+
+        <!-- Cloudflare -->
+        <div class="env-block">
+          <h3>4 · Cloudflare Tunnel</h3>
+          <p class="where">Tunnel public hostnames · not app env vars</p>
+          <ul>
+            <li>
+              <input type="checkbox" id="cf1" />
+              <label for="cf1">
+                <code>convex.mccoidco.xyz</code>
+                <span class="val">→ http://localhost:3210 (or Docker service) on Linux host</span>
+              </label>
+            </li>
+            <li>
+              <input type="checkbox" id="cf2" />
+              <label for="cf2">
+                <code>convex-site.mccoidco.xyz</code>
+                <span class="val">→ http://localhost:3211</span>
+              </label>
+            </li>
+            <li>
+              <input type="checkbox" id="cf3" />
+              <label for="cf3">
+                DNS / SSL
+                <span class="val">Both hostnames HTTPS via Cloudflare</span>
+              </label>
+            </li>
+          </ul>
+        </div>
+
+        <!-- Optional backup -->
+        <div class="env-block span2">
+          <h3>5 · Ops notes (not env vars)</h3>
+          <p class="where">Host / NAS</p>
+          <ul>
+            <li>
+              <input type="checkbox" id="o1" />
+              <label for="o1">
+                Live DB on <strong>local Docker volume</strong> (not NFS/SMB)
+              </label>
+            </li>
+            <li>
+              <input type="checkbox" id="o2" />
+              <label for="o2">
+                Periodic backups copied to NAS
+              </label>
+            </li>
+            <li>
+              <input type="checkbox" id="o3" />
+              <label for="o3">
+                Convex Cloud project left idle for emergency rollback
+              </label>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== JWT SCRIPT ========== -->
+    <section id="jwt-script">
+      <h2>JWT / JWKS key script</h2>
+      <p>
+        Convex Auth needs <code>JWT_PRIVATE_KEY</code> and <code>JWKS</code> on the
+        <strong>self-hosted deployment</strong>. This script generates an RS256
+        keypair and sets both via stdin so PowerShell cannot strip JSON quotes.
+      </p>
+      <div class="callout">
+        Run from the repo root with <code>.env.local</code> already pointing at
+        self-hosted (<code>CONVEX_SELF_HOSTED_URL</code> + admin key). After rotating
+        keys, existing sessions break — users must sign in again.
+      </div>
+
+      <div class="copy-row">
+        <p><strong>File:</strong> <code>scripts/set-auth-keys.mjs</code></p>
+        <button type="button" class="copy" data-copy="auth-script">Copy script</button>
+      </div>
+
+      <pre id="auth-script"><span class="c">/**
+ * Generate Convex Auth JWT keys and set them on the linked deployment.
+ * Avoids PowerShell quote-stripping that corrupts JWKS / JWT_PRIVATE_KEY.
+ *
+ * Usage (from repo root):
+ *   node scripts/set-auth-keys.mjs
+ */</span>
+<span class="k">import</span> { exportJWK, exportPKCS8, generateKeyPair } <span class="k">from</span> <span class="s">"jose"</span>;
+<span class="k">import</span> { spawnSync } <span class="k">from</span> <span class="s">"node:child_process"</span>;
+<span class="k">import</span> { writeFileSync, unlinkSync } <span class="k">from</span> <span class="s">"node:fs"</span>;
+<span class="k">import</span> { tmpdir } <span class="k">from</span> <span class="s">"node:os"</span>;
+<span class="k">import</span> { join } <span class="k">from</span> <span class="s">"node:path"</span>;
+
+<span class="k">const</span> keys = <span class="k">await</span> generateKeyPair(<span class="s">"RS256"</span>, { extractable: <span class="k">true</span> });
+<span class="k">const</span> privateKey = (<span class="k">await</span> exportPKCS8(keys.privateKey))
+  .trimEnd()
+  .replace(/\n/g, <span class="s">" "</span>);
+<span class="k">const</span> publicKey = <span class="k">await</span> exportJWK(keys.publicKey);
+<span class="k">const</span> jwks = JSON.stringify({ keys: [{ use: <span class="s">"sig"</span>, ...publicKey }] });
+
+<span class="k">function</span> setEnv(name, value) {
+  <span class="k">const</span> file = join(tmpdir(), <span class="s">`convex-env-${name}-${Date.now()}.txt`</span>);
+  writeFileSync(file, value, <span class="s">"utf8"</span>);
+  <span class="k">const</span> result = spawnSync(
+    <span class="s">"npx"</span>,
+    [<span class="s">"convex"</span>, <span class="s">"env"</span>, <span class="s">"set"</span>, name],
+    {
+      input: value,
+      encoding: <span class="s">"utf8"</span>,
+      shell: <span class="k">true</span>,
+      stdio: [<span class="s">"pipe"</span>, <span class="s">"pipe"</span>, <span class="s">"pipe"</span>],
+    },
+  );
+  unlinkSync(file);
+  <span class="k">if</span> (result.status !== 0) {
+    console.error(result.stdout);
+    console.error(result.stderr);
+    <span class="k">throw new</span> Error(<span class="s">`Failed to set ${name}`</span>);
+  }
+  console.log(<span class="s">`Set ${name} OK`</span>);
+  console.log(result.stdout.trim());
+}
+
+setEnv(<span class="s">"JWT_PRIVATE_KEY"</span>, privateKey);
+setEnv(<span class="s">"JWKS"</span>, jwks);
+console.log(<span class="s">"Done. Sign in again with a migrated account."</span>);</pre>
+
+      <h3>Also set <code>SITE_URL</code></h3>
+      <p>After keys are in place (or separately), point auth cookies at the production UI:</p>
+      <pre>npx convex env set SITE_URL https://refill-livid.vercel.app/</pre>
+      <p class="note" style="color:var(--muted);font-size:0.85rem">
+        Use your real Vercel domain. Update this if the production hostname changes.
+      </p>
+    </section>
+
+    <!-- ========== VERIFY ========== -->
+    <section id="verify">
+      <h2>Verify you’re on self-hosted</h2>
+      <div class="callout ok">
+        If any check fails, fix env and redeploy before treating cloud as retired.
+      </div>
+      <ul class="env-block" style="list-style:none;padding:0;border:1px solid var(--line);background:var(--panel)">
+        <li style="display:grid;grid-template-columns:auto 1fr;gap:0.65rem;padding:0.75rem 1rem;border-bottom:1px solid var(--line)">
+          <input type="checkbox" id="t1" /><label for="t1">Vercel build log mentions <code>convex.mccoidco.xyz</code>, not <code>*.convex.cloud</code></label>
+        </li>
+        <li style="display:grid;grid-template-columns:auto 1fr;gap:0.65rem;padding:0.75rem 1rem;border-bottom:1px solid var(--line)">
+          <input type="checkbox" id="t2" /><label for="t2">Browser Network tab: WebSocket / fetch to <code>convex.mccoidco.xyz</code></label>
+        </li>
+        <li style="display:grid;grid-template-columns:auto 1fr;gap:0.65rem;padding:0.75rem 1rem;border-bottom:1px solid var(--line)">
+          <input type="checkbox" id="t3" /><label for="t3">Auth HTTP hits <code>convex-site.mccoidco.xyz</code></label>
+        </li>
+        <li style="display:grid;grid-template-columns:auto 1fr;gap:0.65rem;padding:0.75rem 1rem;border-bottom:1px solid var(--line)">
+          <input type="checkbox" id="t4" /><label for="t4">Sign-in works on production; data matches the migrated self-hosted DB</label>
+        </li>
+        <li style="display:grid;grid-template-columns:auto 1fr;gap:0.65rem;padding:0.75rem 1rem">
+          <input type="checkbox" id="t5" /><label for="t5"><code>npx convex env list</code> from laptop shows JWT / JWKS / SITE_URL on self-hosted</label>
+        </li>
+      </ul>
+    </section>
+
+    <footer>
+      Refill self-hosted Convex runbook · domains
+      <code>convex.mccoidco.xyz</code> (API) and
+      <code>convex-site.mccoidco.xyz</code> (HTTP / Auth).
+      Open this file in a browser: <code>docs/self-hosted-convex.html</code>
+    </footer>
+  </div>
+
+  <script>
+    document.querySelectorAll("button.copy").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = btn.getAttribute("data-copy");
+        const el = document.getElementById(id);
+        if (!el) return;
+        const text = el.textContent;
+        try {
+          await navigator.clipboard.writeText(text);
+          const prev = btn.textContent;
+          btn.textContent = "Copied";
+          setTimeout(() => { btn.textContent = prev; }, 1500);
+        } catch {
+          btn.textContent = "Copy failed";
+        }
+      });
+    });
+  </script>
+</body>
+</html>

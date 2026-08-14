@@ -1,4 +1,5 @@
 import { isBottleAvailable } from "@/lib/supplement-utils";
+import { unitWord } from "@/lib/unit-label";
 import type { BottleFieldsValue } from "@/components/BottleFields";
 
 export function toDateInput(ms: number): string {
@@ -71,12 +72,15 @@ export function resolveJarSize(
   return fallback;
 }
 
-export function dailyEquivalent(pillsPerWeek: number): string {
+export function dailyEquivalent(
+  pillsPerWeek: number,
+  form?: string | null
+): string {
   const perDay = pillsPerWeek / 7;
   const rounded = Number.isInteger(perDay)
     ? perDay
     : Math.round(perDay * 10) / 10;
-  const unit = rounded === 1 ? "pill" : "pills";
+  const unit = unitWord(rounded, form);
   if (rounded === 0) return "Doesn't take this";
   if (Number.isInteger(rounded) && rounded > 0) {
     return `${rounded} ${unit} every day`;

@@ -30,6 +30,7 @@ import {
   getGroupDaysLeft,
   type BottleState,
 } from "@/lib/supplement-utils";
+import { remainingNowLabel, unitLabel } from "@/lib/unit-label";
 
 // --- date <-> <input type="date"> helpers (local midnight = start of available day)
 function toDateInput(ms: number): string {
@@ -156,6 +157,7 @@ export default function SupplementDetailPage() {
 
   const lifetime = getLifetimeSpent(bottles);
   const anchoredAt = supplement.anchoredAt ?? supplement.createdAt ?? Date.now();
+  const unit = unitLabel(isEditing ? editData.form : supplement.form);
 
   // Bottle states + on-hand come from the group's pooled FIFO walk when grouped
   // (this brand's bottles are frozen unless it owns the group-open bottle), or
@@ -668,7 +670,7 @@ export default function SupplementDetailPage() {
               </div>
               <div className="text-xs text-text-muted">
                 {ledger.openCostPerPill > 0
-                  ? `$${ledger.openCostPerPill.toFixed(3)}/pill`
+                  ? `$${ledger.openCostPerPill.toFixed(3)}/${unit.singular}`
                   : "no price yet"}
               </div>
             </div>
@@ -756,7 +758,7 @@ export default function SupplementDetailPage() {
             </div>
             <div>
               <label className="text-xs font-semibold text-text-label">
-                Default bottle size (pills)
+                Default bottle size ({unit.plural})
               </label>
               <input
                 type="number"
@@ -877,7 +879,7 @@ export default function SupplementDetailPage() {
                     ${s.bottle.price.toFixed(2)}
                   </span>
                   <span className="text-xs text-text-muted">
-                    ${s.costPerPill.toFixed(3)}/pill
+                    ${s.costPerPill.toFixed(3)}/{unit.singular}
                   </span>
                   <span className="text-xs text-text-muted ml-auto">
                     {toDateInput(s.bottle.purchasedAt)}
@@ -998,7 +1000,7 @@ export default function SupplementDetailPage() {
                         </p>
                       </label>
                       <label className="text-xs text-text-label font-semibold">
-                        Pills remaining now
+                        {remainingNowLabel(supplement.form)}
                         <input
                           type="number"
                           min="0"
@@ -1062,45 +1064,76 @@ export default function SupplementDetailPage() {
             </p>
             {incoming.map((s) => {
               const id = s.bottle._id as Id<"bottles">;
+              const isEditingThis = editingBottleId === id;
               return (
                 <div
                   key={id}
-                  className="border border-primary/30 bg-primary-light rounded-lg p-3 flex items-center gap-3 text-sm"
+                  className="border border-primary/30 bg-primary-light rounded-lg p-3 space-y-2"
                 >
-                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-primary text-white">
-                    Incoming
-                  </span>
-                  <span className="font-mono">
-                    {Math.round(s.remaining)} / {s.bottle.count}
-                  </span>
-                  <span className="font-mono">
-                    ${s.bottle.price.toFixed(2)}
-                  </span>
-                  <span className="text-xs text-text-muted">
-                    available {toDateInput(s.bottle.purchasedAt)}
-                  </span>
-                  <button
-                    onClick={() => {
-                      setEditingBottleId(id);
-                      setEditBottle({
-                        count: s.bottle.count,
-                        price: s.bottle.price,
-                        purchaseUrl: s.bottle.purchaseUrl ?? "",
-                        purchasedAt: toDateInput(s.bottle.purchasedAt),
-                        remaining: Math.round(s.remaining),
-                      });
-                    }}
-                    className="text-xs text-primary hover:underline ml-auto"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => handleRemoveBottle(id)}
-                    disabled={saving}
-                    className="text-xs text-critical hover:underline disabled:opacity-50"
-                  >
-                    Delete
-                  </button>
+                  <div className="flex items-center gap-3 text-sm">
+                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-primary text-white">
+                      Incoming
+                    </span>
+                    <span className="font-mono">
+                      {Math.round(s.remaining)} / {s.bottle.count}
+                    </span>
+                    <span className="font-mono">
+                      ${s.bottle.price.toFixed(2)}
+                    </span>
+                    <span className="text-xs text-text-muted">
+                      available {toDateInput(s.bottle.purchasedAt)}
+                    </span>
+                    {!isEditingThis && (
+                      <>
+                        <button
+                          onClick={() => {
+                            setEditingBottleId(id);
+                            setEditBottle({
+                              count: s.bottle.count,
+                              price: s.bottle.price,
+                              purchaseUrl: s.bottle.purchaseUrl ?? "",
+                              purchasedAt: toDateInput(s.bottle.purchasedAt),
+                              remaining: Math.round(s.remaining),
+                            });
+                          }}
+                          className="text-xs text-primary hover:underline ml-auto"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => handleRemoveBottle(id)}
+                          disabled={saving}
+                          className="text-xs text-critical hover:underline disabled:opacity-50"
+                        >
+                          Delete
+                        </button>
+                      </>
+                    )}
+                  </div>
+                  {isEditingThis && (
+                    <div className="border-t border-primary/20 pt-2 space-y-2">
+                      <BottleFields
+                        value={editBottle}
+                        onChange={setEditBottle}
+                        form={supplement.form}
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleSaveBottle(id, s.remaining)}
+                          disabled={saving}
+                          className="btn-primary flex-1 text-sm py-1.5 disabled:opacity-50"
+                        >
+                          {saving ? "Saving..." : "Save"}
+                        </button>
+                        <button
+                          onClick={() => setEditingBottleId(null)}
+                          className="btn-outline flex-1 text-sm py-1.5"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -1158,7 +1191,7 @@ export default function SupplementDetailPage() {
                     {isEditingThis && (
                       <div className="border border-border-strong rounded-lg p-2 space-y-2 bg-surface">
                         <label className="text-xs text-text-label font-semibold block">
-                          Pills remaining now
+                          {remainingNowLabel(supplement.form)}
                           <input
                             type="number"
                             min="0"
@@ -1213,6 +1246,7 @@ export default function SupplementDetailPage() {
                 onChange={setNewBottle}
                 quantity={newBottleQty}
                 onQuantityChange={setNewBottleQty}
+                form={supplement.form}
               />
               <div className="flex gap-2">
                 <button
@@ -1324,6 +1358,7 @@ export default function SupplementDetailPage() {
                       <DosageInput
                         value={editDosagePillsPerWeek}
                         onChange={setEditDosagePillsPerWeek}
+                        form={supplement.form}
                       />
                       <div className="flex gap-2">
                         <button
@@ -1374,6 +1409,7 @@ export default function SupplementDetailPage() {
               <DosageInput
                 value={newDosagePillsPerWeek}
                 onChange={setNewDosagePillsPerWeek}
+                form={supplement.form}
               />
               <div className="flex gap-2">
                 <button

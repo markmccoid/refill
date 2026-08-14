@@ -652,6 +652,7 @@ function AddSupplementWizard() {
                     <BottleCard
                       key={idx}
                       bottle={b}
+                      form={formData.form}
                       onRemove={() =>
                         setBottles(bottles.filter((_, i) => i !== idx))
                       }
@@ -665,6 +666,7 @@ function AddSupplementWizard() {
                         onChange={setBottleDraft}
                         quantity={bottleQty}
                         onQuantityChange={setBottleQty}
+                        form={formData.form}
                       />
                       <div className="flex gap-2">
                         <button
@@ -762,6 +764,7 @@ function AddSupplementWizard() {
                           person={person}
                           active={!!personDosage}
                           pillsPerWeek={personDosage?.pillsPerWeek ?? 7}
+                          form={formData.form}
                           onToggle={(on) => {
                             if (on) {
                               setDosages([

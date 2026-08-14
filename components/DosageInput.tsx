@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { unitLabel } from "@/lib/unit-label";
 
 const DAYS = ["M", "T", "W", "T", "F", "S", "S"];
 
@@ -24,12 +25,15 @@ function distribute(weekly: number): number[] {
 export function DosageInput({
   value,
   onChange,
+  form,
 }: {
   value: number; // pills per week
   onChange: (pillsPerWeek: number) => void;
+  form?: string | null;
 }) {
   const [mode, setMode] = useState<Mode>("day");
   const [weekdays, setWeekdays] = useState<number[]>(() => distribute(value));
+  const unit = unitLabel(form);
 
   const switchMode = (m: Mode) => {
     if (m === "weekday") setWeekdays(distribute(value));
@@ -69,7 +73,7 @@ export function DosageInput({
             }
             className="w-24 px-3 py-2 border border-border-strong rounded-lg font-mono text-sm"
           />
-          <span className="text-sm text-text-muted">pills per day</span>
+          <span className="text-sm text-text-muted">{unit.plural} per day</span>
         </div>
       )}
 
@@ -84,7 +88,7 @@ export function DosageInput({
             }
             className="w-24 px-3 py-2 border border-border-strong rounded-lg font-mono text-sm"
           />
-          <span className="text-sm text-text-muted">pills per week</span>
+          <span className="text-sm text-text-muted">{unit.plural} per week</span>
         </div>
       )}
 

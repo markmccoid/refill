@@ -15,6 +15,7 @@ import {
   type DosageLike,
   type SupplementStatus,
 } from "@/lib/supplement-utils";
+import { unitWord } from "@/lib/unit-label";
 
 const COVERAGE_TARGET_DAYS = 90;
 
@@ -91,7 +92,7 @@ export function SupplementListItem({
   const metaParts = [
     supplement.brand,
     supplement.form,
-    `${Math.round(ledger.onHand)} pills left`,
+    `${Math.round(ledger.onHand)} ${unitWord(Math.round(ledger.onHand), supplement.form)} left`,
   ].filter(Boolean);
   if (ledger.incomingCount > 0) {
     metaParts.push(`+${Math.round(ledger.incomingCount)} incoming`);

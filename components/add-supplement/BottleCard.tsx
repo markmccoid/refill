@@ -10,6 +10,7 @@ import {
   isIncomingBottle,
   storeLabel,
 } from "@/lib/add-supplement-utils";
+import { unitLabel } from "@/lib/unit-label";
 import { Id } from "@/convex/_generated/dataModel";
 
 interface PersonLine {
@@ -47,9 +48,11 @@ export function BottleGlyph({
 export function BottleCard({
   bottle,
   onRemove,
+  form,
 }: {
   bottle: BottleFieldsValue;
   onRemove: () => void;
+  form?: string | null;
 }) {
   const incoming = isIncomingBottle(bottle);
   const cap = bottleCapLabel(bottle);
@@ -79,7 +82,7 @@ export function BottleCard({
         <div>
           <div className="font-mono text-[17px] font-semibold">
             {countLabel}{" "}
-            <span className="text-xs font-normal">pills</span>
+            <span className="text-xs font-normal">{unitLabel(form).plural}</span>
           </div>
           <div
             className={`text-[11.5px] ${

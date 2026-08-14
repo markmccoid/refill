@@ -1,5 +1,7 @@
 "use client";
 
+import { remainingNowLabel } from "@/lib/unit-label";
+
 // Shared bottle form fields — matches the inline edit layout on the supplement
 // detail screen so Add and Edit stay identical.
 export interface BottleFieldsValue {
@@ -15,9 +17,11 @@ export function BottleFields({
   onChange,
   quantity,
   onQuantityChange,
+  form,
 }: {
   value: BottleFieldsValue;
   onChange: (v: BottleFieldsValue) => void;
+  form?: string | null;
   // When set, shows a "number of bottles" stepper: buying 2–3 identical
   // bottles in one order logs them without re-entering each one.
   quantity?: number;
@@ -75,7 +79,7 @@ export function BottleFields({
           </p>
         </label>
         <label className="text-xs text-text-label font-semibold">
-          Pills remaining now
+          {remainingNowLabel(form)}
           <input
             type="number"
             min="0"

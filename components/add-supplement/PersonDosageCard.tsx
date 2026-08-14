@@ -17,12 +17,14 @@ export function PersonDosageCard({
   pillsPerWeek,
   onToggle,
   onChange,
+  form,
 }: {
   person: PersonRow;
   active: boolean;
   pillsPerWeek: number;
   onToggle: (on: boolean) => void;
   onChange: (pillsPerWeek: number) => void;
+  form?: string | null;
 }) {
   const initial = person.name.trim().charAt(0).toUpperCase() || "?";
 
@@ -62,7 +64,7 @@ export function PersonDosageCard({
         <div className="flex-1 min-w-[120px]">
           <div className="font-semibold">{person.name}</div>
           <div className="text-[12.5px] text-text-muted">
-            {dailyEquivalent(pillsPerWeek)}
+            {dailyEquivalent(pillsPerWeek, form)}
           </div>
         </div>
         <button
@@ -73,7 +75,7 @@ export function PersonDosageCard({
           Remove
         </button>
       </div>
-      <DosageInput value={pillsPerWeek} onChange={onChange} />
+      <DosageInput value={pillsPerWeek} onChange={onChange} form={form} />
     </div>
   );
 }
