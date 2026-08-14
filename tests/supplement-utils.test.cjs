@@ -29,6 +29,7 @@ const {
   getBottleStatesForDosages,
   getConsumptionRate,
   getGroupState,
+  getGroupDaysLeft,
 } = loadSupplementUtils();
 
 const day = 86_400_000;
@@ -134,6 +135,109 @@ test("group state treats member future bottles as incoming", () => {
   assert.equal(ledger.onHand, 8);
   assert.equal(ledger.incomingCount, 30);
   assert.equal(ledger.openSupplementId, "a");
+  assert.deepEqual(ledger.openSupplementIds, ["a"]);
+  assert.equal(ledger.consumptionPaused, false);
+});
+
+function pinned(count, availableOffsetDays, remaining = count) {
+  return { ...bottle(count, availableOffsetDays, remaining), pinnedOpen: true };
+}
+
+test("manual-open equal-splits consumption across pinned bottles", () => {
+  const ledger = getGroupState(
+    [
+      { supplementId: "a", bottles: [pinned(30, 0)] },
+      { supplementId: "b", bottles: [pinned(30, 0)] },
+      { supplementId: "c", bottles: [pinned(30, 0)] },
+    ],
+    jan1,
+    2,
+    jan1 + 3 * day,
+    "manualOpen"
+  );
+
+  assert.equal(ledger.onHand, 84);
+  assert.equal(ledger.states[0].remaining, 28);
+  assert.equal(ledger.states[1].remaining, 28);
+  assert.equal(ledger.states[2].remaining, 28);
+  assert.deepEqual(ledger.openSupplementIds.sort(), ["a", "b", "c"]);
+  assert.equal(ledger.openCostPerPill, 1);
+});
+
+test("manual-open redistributes leftover when one pinned bottle empties", () => {
+  const ledger = getGroupState(
+    [
+      { supplementId: "a", bottles: [pinned(1, 0, 1)] },
+      { supplementId: "b", bottles: [pinned(30, 0)] },
+      { supplementId: "c", bottles: [pinned(30, 0)] },
+    ],
+    jan1,
+    2,
+    jan1 + 3 * day,
+    "manualOpen"
+  );
+
+  assert.equal(ledger.states[0].remaining, 0);
+  assert.equal(ledger.states[0].isOpen, false);
+  assert.equal(ledger.states[1].remaining, 27.5);
+  assert.equal(ledger.states[2].remaining, 27.5);
+  assert.deepEqual(ledger.openSupplementIds.sort(), ["b", "c"]);
+});
+
+test("manual-open does not drain unpinned bottles and does not auto-fill", () => {
+  const ledger = getGroupState(
+    [
+      { supplementId: "a", bottles: [pinned(2, 0, 2)] },
+      { supplementId: "b", bottles: [bottle(30, 0)] },
+    ],
+    jan1,
+    2,
+    jan1 + 3 * day,
+    "manualOpen"
+  );
+
+  assert.equal(ledger.states[0].remaining, 0);
+  assert.equal(ledger.states[1].remaining, 30);
+  assert.equal(ledger.onHand, 30);
+  assert.equal(ledger.consumptionPaused, true);
+  assert.equal(getGroupDaysLeft(ledger, 2), 0);
+  assert.deepEqual(ledger.openSupplementIds, []);
+});
+
+test("manual-open incoming pinned bottles do not drain before available date", () => {
+  const ledger = getGroupState(
+    [
+      { supplementId: "a", bottles: [pinned(10, 0)] },
+      { supplementId: "b", bottles: [pinned(30, 3)] },
+    ],
+    jan1,
+    2,
+    jan1 + day,
+    "manualOpen"
+  );
+
+  assert.equal(ledger.onHand, 8);
+  assert.equal(ledger.incomingCount, 30);
+  assert.equal(ledger.openSupplementId, "a");
+  assert.equal(ledger.states[1].remaining, 30);
+});
+
+test("fifo drainMode ignores pinnedOpen and stays sequential", () => {
+  const ledger = getGroupState(
+    [
+      { supplementId: "a", bottles: [bottle(10, 0)] },
+      { supplementId: "b", bottles: [{ ...bottle(30, 0), pinnedOpen: true }] },
+    ],
+    jan1,
+    2,
+    jan1 + 3 * day,
+    "fifo"
+  );
+
+  assert.equal(ledger.states[0].remaining, 4);
+  assert.equal(ledger.states[1].remaining, 30);
+  assert.equal(ledger.openSupplementId, "a");
+  assert.equal(ledger.states[1].isOpen, false);
 });
 
 test("active pauses contribute zero current consumption", () => {

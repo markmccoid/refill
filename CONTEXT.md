@@ -11,12 +11,16 @@ A distinct product a household stocks (e.g. "B-Right" by Jarrow). One entry, reg
 _Avoid_: pill, vitamin (those are kinds of supplements, not the entry)
 
 **Group**:
-An interchangeable set of Supplements (brands) that fill the same role — e.g. "Fish Oil" spanning Brand A and Brand B. Consumed **one brand at a time in sequence**; owns the combined run-out forecast, cost roll-up, per-person dosage, and the anchor clock. A Supplement belongs to at most one Group. Carries its own **user-set name** (the role — no brand carries it) and an optional **category**; its dashboard image is the **currently-open brand's image** (so it reflects what's being taken now and changes at each rollover). Holds **at least two members** — it forms by linking ≥2 brands, and **auto-dissolves** back to a solo Supplement when unlinked down to one. Membership changes (link / unlink) are re-anchor events.
+An interchangeable set of Supplements (brands) that fill the same role — e.g. "Fish Oil" spanning Brand A and Brand B. By default consumed **one brand at a time in sequence** (pooled FIFO); a group may opt into **manual-open** so several activated bottles drain at once. Owns the combined run-out forecast, cost roll-up, per-person dosage, and the anchor clock. A Supplement belongs to at most one Group. Carries its own **user-set name** (the role — no brand carries it) and an optional **category**; its dashboard image is the **currently-open brand's image** (so it reflects what's being taken now and changes at each rollover). Holds **at least two members** — it forms by linking ≥2 brands, and **auto-dissolves** back to a solo Supplement when unlinked down to one. Membership changes (link / unlink) are re-anchor events.
 _Avoid_: stack (means *different* supplements taken together — the opposite), bundle, category (that's a field on the group, not a synonym), regimen (that's a person's whole set of supplements)
 
 **Group queue** / **Consumption order**:
-The single ordered list of every bottle across a Group's brands, drained **oldest-purchase-first** (pooled FIFO) with the currently-open bottle pinned to the front. A newly added bottle lands by its purchase date (newest at the back), so a new bottle of an earlier brand still waits behind bottles bought before it. The order can be manually overridden when real-world intent differs from purchase dates.
+The single ordered list of every bottle across a Group's brands, drained **oldest-purchase-first** (pooled FIFO) with the currently-open bottle at the front. A newly added bottle lands by its purchase date (newest at the back), so a new bottle of an earlier brand still waits behind bottles bought before it. Default for every group.
 _Avoid_: sequence (unqualified), priority
+
+**Manual-open** / **Activated bottle**:
+Opt-in group drain (ADR-0010): the group dosage splits equally across bottles the user has marked **on the counter**. Unpinned bottles freeze. The next bottle enters rotation only when the user activates it — no FIFO auto-fill. Missing `drainMode` is FIFO. Solo supplements stay single-bottle FIFO.
+_Avoid_: concurrent slots, openSlots, round-robin as a stored setting
 
 **Group dosage** / **Per-brand override**:
 Dosage is set once per person on the **Group** (pills per week) and inherited by every brand in it. A brand may carry an optional **override** for the rare case where its pill count differs (e.g. a half-strength brand needs two pills instead of one). With no overrides present, the Group depletes at one constant rate; an override makes the Group's rate **piecewise** — it changes as the queue rolls from one brand to the next.

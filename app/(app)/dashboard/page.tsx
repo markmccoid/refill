@@ -10,6 +10,7 @@ import {
   getDaysLeft,
   getBottleStatesForDosages,
   getGroupStateForDosages,
+  getGroupDaysLeft,
   getSpendRatePerDay,
 } from "@/lib/supplement-utils";
 
@@ -75,9 +76,11 @@ export default function DashboardPage() {
     const ledger = getGroupStateForDosages(
       memberInput,
       g.anchoredAt,
-      g.dosages ?? []
+      g.dosages ?? [],
+      Date.now(),
+      g.drainMode === "manualOpen" ? "manualOpen" : "fifo"
     );
-    const daysLeft = getDaysLeft(ledger.onHand, g.consumptionRate);
+    const daysLeft = getGroupDaysLeft(ledger, g.consumptionRate);
     const monthlySpend =
       getSpendRatePerDay(g.consumptionRate, ledger.openCostPerPill) * 30;
     const capacity = g.members.reduce(

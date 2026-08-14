@@ -16,7 +16,9 @@ import { loadHouseholdLedger } from "./consumption";
  * Per-person nutrient aggregation (the data behind /insights). For each active
  * person, sum every nutrient's %DV across the supplements they take, scaled by
  * their daily servings of each. Groups contribute only the open brand's facts
- * (ADR-0004: one brand at a time). Supplements without DSLD facts, or missing
+ * Groups contribute the open brand's facts (ADR-0004). Manual-open groups
+ * with more than one brand in the open set are skipped rather than blended
+ * (ADR-0010). Supplements without DSLD facts, or missing
  * the size fields needed to derive servings/day, are returned per-person as
  * `skipped` so the UI can say so.
  */
@@ -64,6 +66,7 @@ export const summary = query({
     // For each group, precompute which member brand is open (the one whose
     // facts count). Determined by the pooled FIFO walk at the group's rate.
     const groupOpenBrand = new Map<Id<"groups">, Id<"supplements"> | null>();
+    const groupOpenBrandCount = new Map<Id<"groups">, number>();
     const groupMembers = new Map<Id<"groups">, Doc<"supplements">[]>();
     for (const g of groups) {
       const members = supplements.filter((s) => s.groupId === g._id);
@@ -83,12 +86,15 @@ export const summary = query({
       const state = getGroupStateForDosages(
         memberBottles,
         g.anchoredAt,
-        activeDosages
+        activeDosages,
+        Date.now(),
+        g.drainMode === "manualOpen" ? "manualOpen" : "fifo"
       );
       groupOpenBrand.set(
         g._id,
         (state.openSupplementId as Id<"supplements"> | null) ?? null
       );
+      groupOpenBrandCount.set(g._id, state.openSupplementIds.length);
     }
 
     // A "consumed subject" per person is either a solo supplement or a group.
@@ -119,6 +125,14 @@ export const summary = query({
           const groupId = supplement.groupId;
           if (seenGroup.has(groupId)) continue;
           seenGroup.add(groupId);
+
+          if ((groupOpenBrandCount.get(groupId) ?? 0) > 1) {
+            skipped.push({
+              name: groups.find((g) => g._id === groupId)?.name ?? "Group",
+              reason: "Multiple brands open",
+            });
+            continue;
+          }
 
           const openId = groupOpenBrand.get(groupId);
           const members = groupMembers.get(groupId) ?? [];

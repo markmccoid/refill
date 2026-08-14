@@ -86,6 +86,9 @@ export const listForHousehold = query({
         category: v.optional(v.string()),
         anchoredAt: v.number(),
         createdAt: v.number(),
+        drainMode: v.optional(
+          v.union(v.literal("fifo"), v.literal("manualOpen"))
+        ),
         cachedOnHand: v.optional(v.number()),
         cachedIncomingCount: v.optional(v.number()),
         cachedRatePerDay: v.optional(v.number()),

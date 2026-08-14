@@ -10,9 +10,9 @@ import { SupplementThumb } from "@/components/SupplementThumb";
 import { CandidateSummaryCard } from "@/components/restock/CandidateSummaryCard";
 import {
   getGroupStateForDosages,
-  getDaysLeft,
   getSupplementStatus,
   getSpendRatePerDay,
+  getGroupDaysLeft,
   isBottleAvailable,
   type BottleLike,
 } from "@/lib/supplement-utils";
@@ -33,6 +33,7 @@ interface GroupView {
   name: string;
   category?: string;
   anchoredAt: number;
+  drainMode?: "fifo" | "manualOpen";
   consumptionRate: number;
   members: GroupMemberView[];
   dosages: {
@@ -78,9 +79,11 @@ export function getGroupListMetrics(group: GroupView) {
   const ledger = getGroupStateForDosages(
     memberInput,
     group.anchoredAt,
-    group.dosages
+    group.dosages,
+    Date.now(),
+    group.drainMode === "manualOpen" ? "manualOpen" : "fifo"
   );
-  const daysLeft = getDaysLeft(ledger.onHand, group.consumptionRate);
+  const daysLeft = getGroupDaysLeft(ledger, group.consumptionRate);
   const status = getSupplementStatus(daysLeft);
   return { daysLeft, status, ledger };
 }
@@ -109,6 +112,8 @@ export function GroupListItem({
   const setDosage = useMutation(api.groups.setDosage);
   const removeMember = useMutation(api.groups.removeMember);
   const addMember = useMutation(api.groups.addMember);
+  const setDrainMode = useMutation(api.groups.setDrainMode);
+  const setBottleOpen = useMutation(api.groups.setBottleOpen);
 
   const rate = group.consumptionRate;
   const { daysLeft, status, ledger } = getGroupListMetrics(group);
@@ -138,16 +143,19 @@ export function GroupListItem({
       (earliestByMember.get(b.supplement._id) ?? 0)
   );
 
-  const openMember = group.members.find(
-    (m) => m.supplement._id === ledger.openSupplementId
+  const isManual = group.drainMode === "manualOpen";
+  const openIdSet = new Set(ledger.openSupplementIds);
+  const openMembers = group.members.filter((m) =>
+    openIdSet.has(m.supplement._id)
   );
 
   const stackMembers = (() => {
     const ordered = [...orderedMembers];
-    if (openMember) {
+    if (openMembers.length > 0) {
+      const openIds = new Set(openMembers.map((m) => m.supplement._id));
       return [
-        openMember,
-        ...ordered.filter((m) => m.supplement._id !== openMember.supplement._id),
+        ...openMembers,
+        ...ordered.filter((m) => !openIds.has(m.supplement._id)),
       ].slice(0, 3);
     }
     return ordered.slice(0, 3);
@@ -157,7 +165,7 @@ export function GroupListItem({
     const remaining = remainingByMember.get(m.supplement._id) ?? 0;
     const incoming = incomingByMember.get(m.supplement._id) ?? 0;
     if (remaining > 0) {
-      return m.supplement._id === ledger.openSupplementId ? "open" : "next";
+      return openIdSet.has(m.supplement._id) ? "open" : "next";
     }
     if (incoming > 0) return "incoming";
     return "empty";
@@ -168,10 +176,6 @@ export function GroupListItem({
   const takersLabel = group.takers
     .map((t) => `${takerName(t.personId)} ${t.pillsPerWeek}/wk`)
     .join(" · ");
-
-  const openRemaining = openMember
-    ? Math.round(remainingByMember.get(openMember.supplement._id) ?? 0)
-    : 0;
 
   return (
     <div className="card overflow-hidden">
@@ -193,15 +197,26 @@ export function GroupListItem({
           <div className="flex items-center gap-2 mt-1 text-sm min-w-0">
             <span className="w-2 h-2 rounded-full bg-on-track shadow-[0_0_0_3px] shadow-on-track/20 flex-shrink-0" />
             <span className="truncate">
-              {openMember ? (
-                <>
-                  Now taking{" "}
-                  <span className="font-medium">{openMember.supplement.name}</span>
-                  {" — "}
-                  <span className="font-mono">{openRemaining} left</span>
-                </>
+              {ledger.consumptionPaused || openMembers.length === 0 ? (
+                <span className="text-text-muted">{takingLabel}</span>
               ) : (
-                <span className="text-text-muted">No bottle open yet</span>
+                <span>
+                  Now taking{" "}
+                  <span className="font-medium">
+                    {openMembers.map((m) => m.supplement.name).join(", ")}
+                  </span>
+                  {" — "}
+                  <span className="font-mono">
+                    {Math.round(
+                      openMembers.reduce(
+                        (sum, m) =>
+                          sum + (remainingByMember.get(m.supplement._id) ?? 0),
+                        0
+                      )
+                    )}{" "}
+                    left
+                  </span>
+                </span>
               )}
             </span>
           </div>
@@ -221,7 +236,7 @@ export function GroupListItem({
                   : Math.round(remaining);
               return (
                 <span key={m.supplement._id} className="contents">
-                  {i > 0 && (
+                  {i > 0 && !isManual && (
                     <span className="text-text-faint text-[11px]">→</span>
                   )}
                   <span
@@ -286,6 +301,32 @@ export function GroupListItem({
             subjectName={group.name}
           />
 
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <p className="text-xs text-text-muted">
+              {isManual
+                ? "Choose which bottles are on the counter. Finished bottles stay frozen until you activate the next."
+                : "Finish one bottle at a time (oldest first)."}
+            </p>
+            <button
+              type="button"
+              onClick={() =>
+                setDrainMode({
+                  groupId: group._id,
+                  drainMode: isManual ? "fifo" : "manualOpen",
+                })
+              }
+              className="text-sm font-semibold text-primary hover:underline px-1"
+            >
+              {isManual ? "Use FIFO order" : "Choose which bottles are open"}
+            </button>
+          </div>
+
+          {ledger.consumptionPaused && (
+            <p className="text-sm text-text-muted">
+              No bottle on the counter — consumption paused.
+            </p>
+          )}
+
           <div className="space-y-1.5">
             {orderedMembers.map((m) => {
               const remaining = Math.round(
@@ -296,54 +337,102 @@ export function GroupListItem({
               );
               const state = memberState(m);
               const cap = capacityOf(m);
+              const memberBottles = ledger.states.filter(
+                (s) => s.bottle.supplementId === m.supplement._id
+              );
               return (
                 <div
                   key={m.supplement._id}
-                  className="flex items-center justify-between gap-3 border border-border-strong rounded-lg p-2.5 bg-surface"
+                  className="border border-border-strong rounded-lg p-2.5 bg-surface space-y-2"
                 >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <StateChip state={state} bottles={m.bottles} />
-                    <SupplementThumb
-                      iconId={m.supplement.iconId}
-                      imageUrl={m.supplement.imageUrl}
-                      name={m.supplement.name}
-                      size="sm"
-                    />
-                    <Link
-                      href={`/supplements/${m.supplement._id}`}
-                      className="font-medium truncate hover:text-primary hover:underline"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {m.supplement.name}
-                      {m.supplement.brand && (
-                        <span className="text-text-muted font-normal">
-                          {" "}
-                          · {m.supplement.brand}
-                        </span>
-                      )}
-                    </Link>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <StateChip state={state} bottles={m.bottles} />
+                      <SupplementThumb
+                        iconId={m.supplement.iconId}
+                        imageUrl={m.supplement.imageUrl}
+                        name={m.supplement.name}
+                        size="sm"
+                      />
+                      <Link
+                        href={`/supplements/${m.supplement._id}`}
+                        className="font-medium truncate hover:text-primary hover:underline"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {m.supplement.name}
+                        {m.supplement.brand && (
+                          <span className="text-text-muted font-normal">
+                            {" "}
+                            · {m.supplement.brand}
+                          </span>
+                        )}
+                      </Link>
+                    </div>
+                    <div className="flex items-center gap-3 flex-shrink-0">
+                      <span className="font-mono text-sm">
+                        {state === "incoming"
+                          ? `${incoming} incoming`
+                          : state === "empty"
+                            ? "empty"
+                            : remaining === cap && cap > 0 && !isManual
+                              ? `${remaining} sealed`
+                              : `${remaining}${cap > 0 ? ` / ${cap}` : ""} left`}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          removeMember({ supplementId: m.supplement._id })
+                        }
+                        className="text-xs text-critical hover:text-critical/80"
+                        title="Unlink from group"
+                      >
+                        Unlink
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-3 flex-shrink-0">
-                    <span className="font-mono text-sm">
-                      {state === "incoming"
-                        ? `${incoming} incoming`
-                        : state === "empty"
-                          ? "empty"
-                          : remaining === cap && cap > 0
-                            ? `${remaining} sealed`
-                            : `${remaining}${cap > 0 ? ` / ${cap}` : ""} left`}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        removeMember({ supplementId: m.supplement._id })
-                      }
-                      className="text-xs text-critical hover:text-critical/80"
-                      title="Unlink from group"
-                    >
-                      Unlink
-                    </button>
-                  </div>
+                  {isManual && (
+                    <div className="space-y-1 pl-1">
+                      {memberBottles
+                        .filter(
+                          (s) =>
+                            isBottleAvailable(s.bottle.purchasedAt) &&
+                            s.remaining > 0
+                        )
+                        .map((s) => {
+                          const bottleId = s.bottle._id as
+                            | Id<"bottles">
+                            | undefined;
+                          if (!bottleId) return null;
+                          const onCounter = s.isOpen;
+                          return (
+                            <div
+                              key={bottleId}
+                              className="flex items-center justify-between gap-2 text-sm"
+                            >
+                              <span className="font-mono text-text-muted">
+                                {Math.round(s.remaining)} / {s.bottle.count}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setBottleOpen({
+                                    bottleId,
+                                    pinnedOpen: !onCounter,
+                                  })
+                                }
+                                className={`text-xs font-semibold ${
+                                  onCounter
+                                    ? "text-on-track hover:underline"
+                                    : "text-primary hover:underline"
+                                }`}
+                              >
+                                {onCounter ? "On the counter" : "Activate"}
+                              </button>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  )}
                 </div>
               );
             })}

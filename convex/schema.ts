@@ -39,15 +39,18 @@ export default defineSchema({
   })
     .index("by_household", ["householdId"]),
 
-  // An interchangeable set of supplement brands consumed one at a time in a
-  // single pooled FIFO queue (ADR-0004). Owns the shared anchor clock; member
-  // supplements' own anchoredAt/quantityAnchor become caches while grouped.
+  // An interchangeable set of supplement brands. Default drain is one at a time
+  // in a pooled FIFO queue (ADR-0004). Optional drainMode "manualOpen" equal-
+  // splits the group dosage across activated bottles (ADR-0010).
   groups: defineTable({
     householdId: v.id("households"),
     name: v.string(), // the role, e.g. "Fish Oil" — no member brand carries it
     category: v.optional(v.string()),
     anchoredAt: v.number(), // shared clock for the pooled consumption walk
     createdAt: v.number(),
+    // ADR-0010: missing / "fifo" = sequential one-open-bottle (ADR-0004).
+    // "manualOpen" = equal-split across bottles with pinnedOpen.
+    drainMode: v.optional(v.union(v.literal("fifo"), v.literal("manualOpen"))),
     // Denormalized forecast snapshot for cheap restock.badgeCount (I/O).
     // Refreshed on stock/rate mutations; badge extrapolates from forecastCachedAt.
     cachedOnHand: v.optional(v.number()),
@@ -111,6 +114,8 @@ export default defineSchema({
     // Pills in THIS bottle at the supplement's anchoredAt. Σ across bottles =
     // supplement.quantityAnchor. Consumption drains these oldest-first on read.
     remainingAtAnchor: v.number(),
+    // ADR-0010: activated in a manualOpen group. Ignored in FIFO groups.
+    pinnedOpen: v.optional(v.boolean()),
   })
     .index("by_supplement", ["supplementId"])
     .index("by_household", ["householdId"]),

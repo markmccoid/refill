@@ -16,6 +16,7 @@ export const bottleDoc = v.object({
   retailerId: v.optional(v.id("retailers")),
   purchasedAt: v.number(),
   remainingAtAnchor: v.number(),
+  pinnedOpen: v.optional(v.boolean()),
 });
 
 /** Resync the supplement's quantityAnchor cache = Σ bottle.remainingAtAnchor. */
@@ -123,7 +124,7 @@ export const update = mutation({
     const current = await ctx.db.get(id);
     if (!current) return null;
 
-    const patch: Record<string, number | string | undefined> = {};
+    const patch: Record<string, number | string | boolean | undefined> = {};
     if (price !== undefined) patch.price = price;
     if (purchaseUrl !== undefined) {
       const url = purchaseUrl.trim();
@@ -143,6 +144,9 @@ export const update = mutation({
     if (count !== undefined) {
       patch.count = count;
       patch.remainingAtAnchor = Math.min(current.remainingAtAnchor, count);
+      if (Math.min(current.remainingAtAnchor, count) <= 0) {
+        patch.pinnedOpen = undefined;
+      }
     }
     await ctx.db.patch(id, patch);
 
@@ -186,6 +190,9 @@ export const recount = mutation({
     if (!current) return null;
     await ctx.db.patch(id, {
       remainingAtAnchor: Math.max(0, Math.min(remaining, current.count)),
+      ...(Math.max(0, Math.min(remaining, current.count)) <= 0
+        ? { pinnedOpen: undefined }
+        : {}),
     });
     await syncAnchorCache(ctx, bottle.supplementId);
     await refreshForecastCacheFor(ctx, bottle.supplementId);

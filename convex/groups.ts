@@ -8,7 +8,12 @@ import {
   refreshForecastCacheFor,
   refreshForecastCacheForGroup,
 } from "./consumption";
-import { getDosageWeekly, getGroupRate } from "../lib/supplement-utils";
+import {
+  getDosageWeekly,
+  getGroupRate,
+  isBottleAvailable,
+  sortBottles,
+} from "../lib/supplement-utils";
 import {
   requireMembership,
   requireGroupAccess,
@@ -274,6 +279,12 @@ export async function detachSupplementFromGroup(
   group: Doc<"groups">
 ): Promise<void> {
   await reanchorGroup(ctx, group._id);
+  const departingBottles = await ctx.db
+    .query("bottles")
+    .withIndex("by_supplement", (q) => q.eq("supplementId", supplementId))
+    .collect();
+  await clearPinnedOpen(ctx, departingBottles);
+
   const now = Date.now();
   await ctx.db.patch(supplementId, {
     groupId: undefined,
@@ -283,6 +294,11 @@ export async function detachSupplementFromGroup(
   const remaining = await groupMembers(ctx, group._id);
   if (remaining.length === 1) {
     const survivor = remaining[0];
+    const survivorBottles = await ctx.db
+      .query("bottles")
+      .withIndex("by_supplement", (q) => q.eq("supplementId", survivor._id))
+      .collect();
+    await clearPinnedOpen(ctx, survivorBottles);
     await ctx.db.patch(survivor._id, {
       groupId: undefined,
       anchoredAt: now,
@@ -362,6 +378,107 @@ export const setDosage = mutation({
       }
     }
     await refreshForecastCacheForGroup(ctx, groupId);
+  },
+});
+
+async function bottlesForMembers(
+  ctx: MutationCtx,
+  members: Doc<"supplements">[]
+) {
+  const lists = await Promise.all(
+    members.map((m) =>
+      ctx.db
+        .query("bottles")
+        .withIndex("by_supplement", (q) => q.eq("supplementId", m._id))
+        .collect()
+    )
+  );
+  return lists.flat();
+}
+
+async function clearPinnedOpen(
+  ctx: MutationCtx,
+  bottles: Doc<"bottles">[]
+) {
+  for (const b of bottles) {
+    if (b.pinnedOpen) await ctx.db.patch(b._id, { pinnedOpen: undefined });
+  }
+}
+
+/**
+ * Opt a group into manual-open (activate bottles yourself) or back to FIFO.
+ * FIFO → manualOpen pins the current FIFO-open bottle so consumption does not pause.
+ * manualOpen → FIFO clears pins and resumes oldest-first.
+ */
+export const setDrainMode = mutation({
+  args: {
+    groupId: v.id("groups"),
+    drainMode: v.union(v.literal("fifo"), v.literal("manualOpen")),
+  },
+  returns: v.null(),
+  async handler(ctx, { groupId, drainMode }) {
+    const group = await requireGroupAccess(ctx, groupId);
+    const currentlyManual = group.drainMode === "manualOpen";
+    const nextManual = drainMode === "manualOpen";
+    if (currentlyManual === nextManual) return null;
+
+    await reanchorGroup(ctx, groupId);
+    const members = await groupMembers(ctx, groupId);
+    const bottles = await bottlesForMembers(ctx, members);
+
+    if (nextManual) {
+      const open = sortBottles(bottles).find(
+        (b) => isBottleAvailable(b.purchasedAt) && b.remainingAtAnchor > 0
+      );
+      if (open) await ctx.db.patch(open._id, { pinnedOpen: true });
+      await ctx.db.patch(groupId, { drainMode: "manualOpen" });
+    } else {
+      await clearPinnedOpen(ctx, bottles);
+      await ctx.db.patch(groupId, { drainMode: undefined });
+    }
+    await refreshForecastCacheForGroup(ctx, groupId);
+    return null;
+  },
+});
+
+/**
+ * Activate or deactivate a bottle in a manual-open group. Incoming and empty
+ * bottles cannot be activated. Does not auto-fill a replacement.
+ */
+export const setBottleOpen = mutation({
+  args: {
+    bottleId: v.id("bottles"),
+    pinnedOpen: v.boolean(),
+  },
+  returns: v.null(),
+  async handler(ctx, { bottleId, pinnedOpen }) {
+    const bottle = await ctx.db.get(bottleId);
+    if (!bottle) throw new Error("Bottle not found.");
+    const supplement = await requireSupplementAccess(ctx, bottle.supplementId);
+    if (!supplement.groupId) {
+      throw new Error("Only grouped bottles can be activated.");
+    }
+    const group = await requireGroupAccess(ctx, supplement.groupId);
+    if (group.drainMode !== "manualOpen") {
+      throw new Error(
+        "Activate bottles after switching the group to choose which are open."
+      );
+    }
+    if (pinnedOpen && !isBottleAvailable(bottle.purchasedAt)) {
+      throw new Error("Incoming bottles cannot be activated.");
+    }
+
+    await reanchorGroup(ctx, group._id);
+    const current = await ctx.db.get(bottleId);
+    if (!current) return null;
+    if (pinnedOpen && current.remainingAtAnchor <= 0) {
+      throw new Error("Empty bottles cannot be activated.");
+    }
+    await ctx.db.patch(bottleId, {
+      pinnedOpen: pinnedOpen ? true : undefined,
+    });
+    await refreshForecastCacheForGroup(ctx, group._id);
+    return null;
   },
 });
 

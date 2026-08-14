@@ -162,6 +162,9 @@ export interface BottleLike {
   price: number;
   purchasedAt: number;
   remainingAtAnchor: number;
+  /** Ignored unless the owning group is manualOpen (ADR-0010). */
+  pinnedOpen?: boolean;
+  _id?: string;
 }
 
 /** Local calendar midnight for a timestamp (available-date comparisons). */
@@ -347,9 +350,174 @@ export interface GroupMember<B extends BottleLike = BottleLike> {
   bottles: B[];
 }
 
+export type DrainMode = "fifo" | "manualOpen";
+
+export function resolveDrainMode(
+  drainMode?: DrainMode | null
+): DrainMode {
+  return drainMode === "manualOpen" ? "manualOpen" : "fifo";
+}
+
 export interface GroupLedgerState<B extends BottleLike = BottleLike>
   extends LedgerState<B & { supplementId: string }> {
-  openSupplementId: string | null; // which brand's bottle is currently open
+  openSupplementId: string | null; // first open brand; alias of openSupplementIds[0]
+  openSupplementIds: string[];
+  openBottleIds: string[];
+  /** Manual-open with stock on the shelf but nothing activated — days-left is 0. */
+  consumptionPaused: boolean;
+}
+
+type TaggedBottle<B extends BottleLike> = B & { supplementId: string };
+
+function tagMemberBottles<B extends BottleLike>(
+  members: GroupMember<B>[]
+): TaggedBottle<B>[] {
+  return members.flatMap((m) =>
+    m.bottles.map((b) => ({ ...b, supplementId: m.supplementId }))
+  );
+}
+
+function withOpenBrands<B extends BottleLike>(
+  ledger: LedgerState<TaggedBottle<B>>
+): GroupLedgerState<B> {
+  const open = ledger.states.filter((s) => s.isOpen);
+  const openSupplementIds = [...new Set(open.map((s) => s.bottle.supplementId))];
+  const openBottleIds = open
+    .map((s) => s.bottle._id)
+    .filter((id): id is string => typeof id === "string");
+  return {
+    ...ledger,
+    openSupplementId: openSupplementIds[0] ?? null,
+    openSupplementIds,
+    openBottleIds,
+    consumptionPaused: open.length === 0 && ledger.onHand > 0,
+  };
+}
+
+/**
+ * Equal-split drain across pinned bottles (ADR-0010). Unpinned bottles freeze.
+ * Incoming bottles never drain. Empty open set consumes nothing (no auto-fill).
+ * Separate from getBottleLedger so FIFO groups cannot drift.
+ */
+function getPinnedOpenLedger<B extends BottleLike>(
+  bottles: B[],
+  anchoredAt: number,
+  now: number,
+  consumptionBetween: (from: number, to: number) => number
+): LedgerState<B> {
+  const ordered = sortBottles(bottles);
+  const remainingByBottle = new Map<B, number>();
+  for (const bottle of ordered) {
+    remainingByBottle.set(bottle, bottle.remainingAtAnchor);
+  }
+
+  const availableQueue: B[] = [];
+  const availabilityEvents: B[] = [];
+  for (const bottle of ordered) {
+    const availableAt = startOfLocalDay(bottle.purchasedAt);
+    if (availableAt <= anchoredAt) availableQueue.push(bottle);
+    else if (availableAt <= now) availabilityEvents.push(bottle);
+  }
+
+  const drain = (from: number, to: number) => {
+    if (to <= from) return;
+    let toConsume = consumptionBetween(from, to);
+    while (toConsume > 1e-9) {
+      const openSet = availableQueue.filter(
+        (bottle) =>
+          bottle.pinnedOpen === true && (remainingByBottle.get(bottle) ?? 0) > 0
+      );
+      if (openSet.length === 0) return;
+      const share = toConsume / openSet.length;
+      let consumedThisRound = 0;
+      for (const bottle of openSet) {
+        const current = remainingByBottle.get(bottle) ?? 0;
+        const take = Math.min(current, share);
+        remainingByBottle.set(bottle, current - take);
+        consumedThisRound += take;
+      }
+      if (consumedThisRound <= 1e-12) return;
+      toConsume -= consumedThisRound;
+    }
+  };
+
+  let cursor = anchoredAt;
+  let eventIndex = 0;
+  while (eventIndex < availabilityEvents.length) {
+    const availableAt = startOfLocalDay(
+      availabilityEvents[eventIndex].purchasedAt
+    );
+    drain(cursor, availableAt);
+    cursor = availableAt;
+    while (
+      eventIndex < availabilityEvents.length &&
+      startOfLocalDay(availabilityEvents[eventIndex].purchasedAt) ===
+        availableAt
+    ) {
+      availableQueue.push(availabilityEvents[eventIndex]);
+      eventIndex += 1;
+    }
+  }
+  drain(cursor, now);
+
+  const states: BottleState<B>[] = ordered.map((bottle) => {
+    const remaining = Math.max(0, remainingByBottle.get(bottle) ?? 0);
+    return {
+      bottle,
+      remaining,
+      isOpen: false,
+      isEmpty: remaining <= 0,
+      fillPct: bottle.count > 0 ? (remaining / bottle.count) * 100 : 0,
+      costPerPill: bottle.count > 0 ? bottle.price / bottle.count : 0,
+    };
+  });
+
+  const openStates = states.filter(
+    (s) =>
+      s.bottle.pinnedOpen === true &&
+      isBottleAvailable(s.bottle.purchasedAt, now) &&
+      s.remaining > 0
+  );
+  for (const s of openStates) s.isOpen = true;
+
+  const availableStates = states.filter((s) =>
+    isBottleAvailable(s.bottle.purchasedAt, now)
+  );
+  const incomingStates = states.filter(
+    (s) => !isBottleAvailable(s.bottle.purchasedAt, now) && s.remaining > 0
+  );
+  const onHandExact = availableStates.reduce((sum, s) => sum + s.remaining, 0);
+  const incomingCount = incomingStates.reduce((sum, s) => sum + s.remaining, 0);
+  const nonEmpty = availableStates.filter((s) => s.remaining > 0);
+  const openRemainingExact = openStates.reduce((sum, s) => sum + s.remaining, 0);
+  const openCostPerPill =
+    openStates.length === 0
+      ? 0
+      : openStates.reduce((sum, s) => sum + s.costPerPill, 0) / openStates.length;
+  const openFillPct =
+    openStates.length === 1
+      ? openStates[0].fillPct
+      : openStates.length > 1 && openRemainingExact > 0
+        ? openStates.reduce(
+            (sum, s) => sum + s.fillPct * s.remaining,
+            0
+          ) / openRemainingExact
+        : 0;
+
+  return {
+    states,
+    onHandExact,
+    onHand: Math.round(onHandExact),
+    incomingCount: Math.round(incomingCount),
+    incomingBottles: incomingStates.length,
+    nextIncomingAt:
+      incomingStates.length > 0 ? incomingStates[0].bottle.purchasedAt : null,
+    openCostPerPill,
+    sealedSpares: Math.max(0, nonEmpty.length - openStates.length),
+    bottleCount: nonEmpty.length,
+    openFillPct,
+    openRemaining: Math.round(openRemainingExact),
+  };
 }
 
 /**
@@ -357,35 +525,51 @@ export interface GroupLedgerState<B extends BottleLike = BottleLike>
  * from the group's shared anchor. Identical to getBottleStates, only the queue
  * spans brands — so on-hand, the open bottle, cost-per-pill, and which brand is
  * open all fall out of the same drain.
+ *
+ * `drainMode: "manualOpen"` uses the pinned equal-split walk (ADR-0010) instead.
+ * Missing / `"fifo"` is today's sequential walk.
  */
 export function getGroupState<B extends BottleLike>(
   members: GroupMember<B>[],
   anchoredAt: number,
   ratePerDay: number,
-  now: number = Date.now()
+  now: number = Date.now(),
+  drainMode: DrainMode = "fifo"
 ): GroupLedgerState<B> {
-  const tagged = members.flatMap((m) =>
-    m.bottles.map((b) => ({ ...b, supplementId: m.supplementId }))
-  );
-  const ledger = getBottleStates(tagged, anchoredAt, ratePerDay, now);
-  const open = ledger.states.find((s) => s.isOpen);
-  return { ...ledger, openSupplementId: open ? open.bottle.supplementId : null };
+  const tagged = tagMemberBottles(members);
+  const ledger =
+    resolveDrainMode(drainMode) === "manualOpen"
+      ? getPinnedOpenLedger(tagged, anchoredAt, now, (from, to) =>
+          ((to - from) / MS_PER_DAY) * ratePerDay
+        )
+      : getBottleStates(tagged, anchoredAt, ratePerDay, now);
+  return withOpenBrands(ledger);
 }
 
 export function getGroupStateForDosages<B extends BottleLike>(
   members: GroupMember<B>[],
   anchoredAt: number,
   memberDosages: (DosageLike & { personId: string })[],
-  now: number = Date.now()
+  now: number = Date.now(),
+  drainMode: DrainMode = "fifo"
 ): GroupLedgerState<B> {
-  const tagged = members.flatMap((m) =>
-    m.bottles.map((b) => ({ ...b, supplementId: m.supplementId }))
-  );
-  const ledger = getBottleLedger(tagged, anchoredAt, now, (from, to) =>
-    getGroupConsumptionBetween(memberDosages, from, to)
-  );
-  const open = ledger.states.find((s) => s.isOpen);
-  return { ...ledger, openSupplementId: open ? open.bottle.supplementId : null };
+  const tagged = tagMemberBottles(members);
+  const consume = (from: number, to: number) =>
+    getGroupConsumptionBetween(memberDosages, from, to);
+  const ledger =
+    resolveDrainMode(drainMode) === "manualOpen"
+      ? getPinnedOpenLedger(tagged, anchoredAt, now, consume)
+      : getBottleLedger(tagged, anchoredAt, now, consume);
+  return withOpenBrands(ledger);
+}
+
+/** Days-left for a group ledger. Paused (stock, nothing activated) is 0. */
+export function getGroupDaysLeft(
+  ledger: Pick<GroupLedgerState, "onHand" | "consumptionPaused">,
+  ratePerDay: number
+): number {
+  if (ledger.consumptionPaused) return 0;
+  return getDaysLeft(ledger.onHand, ratePerDay);
 }
 
 /**

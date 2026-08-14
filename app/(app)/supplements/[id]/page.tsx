@@ -27,6 +27,7 @@ import {
   getLifetimeSpent,
   getDosageWeekly,
   isBottleAvailable,
+  getGroupDaysLeft,
   type BottleState,
 } from "@/lib/supplement-utils";
 
@@ -92,6 +93,7 @@ export default function SupplementDetailPage() {
   const updateBottle = useMutation(api.bottles.update);
   const removeBottle = useMutation(api.bottles.remove);
   const recountBottle = useMutation(api.bottles.recount);
+  const setBottleOpen = useMutation(api.groups.setBottleOpen);
   const importFacts = useAction(api.dsld.importFacts);
 
   const [isEditing, setIsEditing] = useState(false);
@@ -179,7 +181,9 @@ export default function SupplementDetailPage() {
     const gl = getGroupStateForDosages(
       memberInput,
       group.anchoredAt,
-      group.dosages ?? []
+      group.dosages ?? [],
+      Date.now(),
+      group.drainMode === "manualOpen" ? "manualOpen" : "fifo"
     );
     states = gl.states.filter((s) => s.bottle.supplementId === supplementId);
     const availableStates = states.filter((s) =>
@@ -199,7 +203,7 @@ export default function SupplementDetailPage() {
     const openHere = states.find((s) => s.isOpen);
     openRemaining = openHere ? Math.round(openHere.remaining) : 0;
     openCostPerPill = gl.openCostPerPill;
-    daysLeft = getDaysLeft(gl.onHand, rate); // the group's run-out
+    daysLeft = getGroupDaysLeft(gl, rate); // the group's run-out
     monthlySpend = getSpendRatePerDay(rate, gl.openCostPerPill) * 30;
   } else {
     rate = getConsumptionRate(dosages.filter((d) => d.personActive));
@@ -525,7 +529,10 @@ export default function SupplementDetailPage() {
         <div className="bg-primary-light border border-primary/25 rounded-lg px-4 py-3 text-sm flex items-center justify-between gap-3">
           <span>
             Part of the <strong>{group.name}</strong> group — on-hand is pooled
-            across brands; forecast &amp; dosage are managed at the group level.
+            across brands; forecast &amp; dosage are managed at the group level
+            {group.drainMode === "manualOpen"
+              ? "; activate bottles on the group or below to put them on the counter."
+              : "."}
           </span>
           <Link
             href="/supplements"
@@ -910,6 +917,21 @@ export default function SupplementDetailPage() {
                     >
                       Edit
                     </button>
+                    {group?.drainMode === "manualOpen" &&
+                      isBottleAvailable(s.bottle.purchasedAt) &&
+                      s.remaining > 0 && (
+                      <button
+                        onClick={() =>
+                          setBottleOpen({
+                            bottleId: id,
+                            pinnedOpen: !s.isOpen,
+                          })
+                        }
+                        className="text-primary hover:underline"
+                      >
+                        {s.isOpen ? "On the counter" : "Activate"}
+                      </button>
+                    )}
                     <button
                       onClick={() => duplicateBottle(s.bottle)}
                       className="text-primary hover:underline"
@@ -1092,32 +1114,89 @@ export default function SupplementDetailPage() {
               Emptied ({empty.length}) · $
               {getLifetimeSpent(empty.map((s) => s.bottle)).toFixed(2)}
             </summary>
-            <div className="mt-2 space-y-1">
+            <div className="mt-2 space-y-2">
               {empty.map((s) => {
                 const id = s.bottle._id as Id<"bottles">;
+                const isEditingThis = editingBottleId === id;
                 return (
-                  <div
-                    key={id}
-                    className="flex items-center gap-3 text-xs text-text-muted px-1"
-                  >
-                    <span className="font-mono">{s.bottle.count} ct</span>
-                    <span className="font-mono">
-                      ${s.bottle.price.toFixed(2)}
-                    </span>
-                    <span>{toDateInput(s.bottle.purchasedAt)}</span>
-                    <button
-                      onClick={() => duplicateBottle(s.bottle)}
-                      className="text-primary hover:underline ml-auto"
-                    >
-                      Duplicate
-                    </button>
-                    <button
-                      onClick={() => handleRemoveBottle(id)}
-                      disabled={saving}
-                      className="text-critical hover:underline disabled:opacity-50"
-                    >
-                      Delete
-                    </button>
+                  <div key={id} className="space-y-1">
+                    <div className="flex items-center gap-3 text-xs text-text-muted px-1">
+                      <span className="font-mono">{s.bottle.count} ct</span>
+                      <span className="font-mono">
+                        ${s.bottle.price.toFixed(2)}
+                      </span>
+                      <span>{toDateInput(s.bottle.purchasedAt)}</span>
+                      <button
+                        onClick={() => {
+                          setEditingBottleId(id);
+                          setEditBottle({
+                            count: s.bottle.count,
+                            price: s.bottle.price,
+                            purchaseUrl: s.bottle.purchaseUrl ?? "",
+                            purchasedAt: toDateInput(s.bottle.purchasedAt),
+                            remaining: 0,
+                          });
+                        }}
+                        className="text-primary hover:underline ml-auto"
+                      >
+                        Restore
+                      </button>
+                      <button
+                        onClick={() => duplicateBottle(s.bottle)}
+                        className="text-primary hover:underline"
+                      >
+                        Duplicate
+                      </button>
+                      <button
+                        onClick={() => handleRemoveBottle(id)}
+                        disabled={saving}
+                        className="text-critical hover:underline disabled:opacity-50"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                    {isEditingThis && (
+                      <div className="border border-border-strong rounded-lg p-2 space-y-2 bg-surface">
+                        <label className="text-xs text-text-label font-semibold block">
+                          Pills remaining now
+                          <input
+                            type="number"
+                            min="0"
+                            max={editBottle.count || undefined}
+                            value={editBottle.remaining}
+                            onChange={(e) =>
+                              setEditBottle({
+                                ...editBottle,
+                                remaining: Math.max(
+                                  0,
+                                  parseInt(e.target.value) || 0
+                                ),
+                              })
+                            }
+                            className="w-full mt-1 px-2 py-1.5 border border-border-strong rounded-lg font-mono text-sm"
+                          />
+                          <p className="mt-1 text-[11px] font-normal text-text-muted">
+                            Puts this bottle back on the shelf. Consumption
+                            already taken from other bottles stays there.
+                          </p>
+                        </label>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleSaveBottle(id, s.remaining)}
+                            disabled={saving || editBottle.remaining <= 0}
+                            className="btn-primary flex-1 text-sm py-1.5 disabled:opacity-50"
+                          >
+                            {saving ? "Saving..." : "Restore"}
+                          </button>
+                          <button
+                            onClick={() => setEditingBottleId(null)}
+                            className="btn-outline flex-1 text-sm py-1.5"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}

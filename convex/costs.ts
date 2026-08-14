@@ -142,7 +142,9 @@ export const summary = query({
       const { openCostPerPill } = getGroupStateForDosages(
         memberBottles,
         g.anchoredAt,
-        memberDosages
+        memberDosages,
+        Date.now(),
+        g.drainMode === "manualOpen" ? "manualOpen" : "fifo"
       );
 
       perSupplement.push({

@@ -24,6 +24,7 @@ import {
   getDosageWeekly,
   getGroupRate,
   getGroupStateForDosages,
+  getGroupDaysLeft,
 } from "../lib/supplement-utils";
 import {
   DEFAULT_COVERAGE_TARGET_DAYS,
@@ -133,13 +134,14 @@ async function getSubjectStates(
       })),
       g.anchoredAt,
       dosages,
-      now
+      now,
+      g.drainMode === "manualOpen" ? "manualOpen" : "fifo"
     );
     const open =
       members.find((m) => m._id === groupLedger.openSupplementId) ??
       members[0] ??
       null;
-    const days = getDaysLeft(groupLedger.onHand, rate);
+    const days = getGroupDaysLeft(groupLedger, rate);
     states.push({
       kind: "group",
       supplementId: null,

@@ -91,39 +91,82 @@ export type HouseholdLedger = {
   peopleById: Map<Id<"people">, Doc<"people"> | null>;
 };
 
+type LedgerChildTable = "bottles" | "dosages";
+
+/**
+ * Load bottles/dosages by the household index, then fill gaps from
+ * `by_supplement`. Rows created before `householdId` was denormalized are
+ * absent from `by_household`; a non-empty household index must not be treated
+ * as "migration complete" or those rows disappear from Dashboard / inventory.
+ *
+ * If any supplement had untagged rows, reload every supplement from
+ * `by_supplement` so mixed tagged+untagged ledgers stay complete.
+ */
+async function loadChildDocsForSupplements<Table extends LedgerChildTable>(
+  ctx: DbCtx,
+  table: Table,
+  householdId: Id<"households">,
+  supplements: Doc<"supplements">[]
+): Promise<Map<Id<"supplements">, Doc<Table>[]>> {
+  const bySupplementId = new Map<Id<"supplements">, Doc<Table>[]>();
+  for (const s of supplements) bySupplementId.set(s._id, []);
+
+  const fromHousehold = (await ctx.db
+    .query(table)
+    .withIndex("by_household", (q) => q.eq("householdId", householdId))
+    .collect()) as Doc<Table>[];
+  for (const doc of fromHousehold) {
+    const list = bySupplementId.get(doc.supplementId);
+    if (list) list.push(doc);
+    else bySupplementId.set(doc.supplementId, [doc]);
+  }
+
+  const missing = supplements.filter(
+    (s) => (bySupplementId.get(s._id)?.length ?? 0) === 0
+  );
+  const fallbacks = await Promise.all(
+    missing.map(
+      (s) =>
+        ctx.db
+          .query(table)
+          .withIndex("by_supplement", (q) => q.eq("supplementId", s._id))
+          .collect() as Promise<Doc<Table>[]>
+    )
+  );
+
+  let householdIndexIncomplete = false;
+  for (let i = 0; i < missing.length; i++) {
+    const docs = fallbacks[i];
+    bySupplementId.set(missing[i]._id, docs);
+    if (docs.length > 0) householdIndexIncomplete = true;
+  }
+
+  if (householdIndexIncomplete) {
+    const alreadyFilled = new Set(missing.map((s) => s._id));
+    await Promise.all(
+      supplements
+        .filter((s) => !alreadyFilled.has(s._id))
+        .map(async (s) => {
+          bySupplementId.set(
+            s._id,
+            (await ctx.db
+              .query(table)
+              .withIndex("by_supplement", (q) => q.eq("supplementId", s._id))
+              .collect()) as Doc<Table>[]
+          );
+        })
+    );
+  }
+
+  return bySupplementId;
+}
+
 async function loadBottlesForSupplements(
   ctx: DbCtx,
   householdId: Id<"households">,
   supplements: Doc<"supplements">[]
 ): Promise<Map<Id<"supplements">, Doc<"bottles">[]>> {
-  const bottlesBySupplement = new Map<Id<"supplements">, Doc<"bottles">[]>();
-  for (const s of supplements) bottlesBySupplement.set(s._id, []);
-
-  const byHousehold = await ctx.db
-    .query("bottles")
-    .withIndex("by_household", (q) => q.eq("householdId", householdId))
-    .collect();
-
-  if (byHousehold.length > 0) {
-    for (const b of byHousehold) {
-      const list = bottlesBySupplement.get(b.supplementId);
-      if (list) list.push(b);
-      else bottlesBySupplement.set(b.supplementId, [b]);
-    }
-    return bottlesBySupplement;
-  }
-
-  // Pre-migration fallback: per-supplement index.
-  for (const s of supplements) {
-    bottlesBySupplement.set(
-      s._id,
-      await ctx.db
-        .query("bottles")
-        .withIndex("by_supplement", (q) => q.eq("supplementId", s._id))
-        .collect()
-    );
-  }
-  return bottlesBySupplement;
+  return loadChildDocsForSupplements(ctx, "bottles", householdId, supplements);
 }
 
 async function loadDosagesForSupplements(
@@ -131,33 +174,7 @@ async function loadDosagesForSupplements(
   householdId: Id<"households">,
   supplements: Doc<"supplements">[]
 ): Promise<Map<Id<"supplements">, Doc<"dosages">[]>> {
-  const dosagesBySupplement = new Map<Id<"supplements">, Doc<"dosages">[]>();
-  for (const s of supplements) dosagesBySupplement.set(s._id, []);
-
-  const byHousehold = await ctx.db
-    .query("dosages")
-    .withIndex("by_household", (q) => q.eq("householdId", householdId))
-    .collect();
-
-  if (byHousehold.length > 0) {
-    for (const d of byHousehold) {
-      const list = dosagesBySupplement.get(d.supplementId);
-      if (list) list.push(d);
-      else dosagesBySupplement.set(d.supplementId, [d]);
-    }
-    return dosagesBySupplement;
-  }
-
-  for (const s of supplements) {
-    dosagesBySupplement.set(
-      s._id,
-      await ctx.db
-        .query("dosages")
-        .withIndex("by_supplement", (q) => q.eq("supplementId", s._id))
-        .collect()
-    );
-  }
-  return dosagesBySupplement;
+  return loadChildDocsForSupplements(ctx, "dosages", householdId, supplements);
 }
 
 export async function loadHouseholdLedger(
@@ -282,13 +299,15 @@ export async function reanchorGroup(ctx: MutationCtx, groupId: Id<"groups">) {
     }
   }
 
+  const now = Date.now();
   const { states } = getGroupStateForDosages(
     memberBottles,
     group.anchoredAt,
-    dosages
+    dosages,
+    now,
+    group.drainMode === "manualOpen" ? "manualOpen" : "fifo"
   );
 
-  const now = Date.now();
   for (const s of states) {
     if (s.remaining !== s.bottle.remainingAtAnchor) {
       await ctx.db.patch(s.bottle._id as Id<"bottles">, {
@@ -433,11 +452,13 @@ export async function refreshForecastCacheForGroup(
     memberBottles,
     group.anchoredAt,
     dosages,
-    now
+    now,
+    group.drainMode === "manualOpen" ? "manualOpen" : "fifo"
   );
 
   await ctx.db.patch(groupId, {
-    cachedOnHand: ledger.onHand,
+    // Badge treats a paused manual-open group as out (stock on shelf, nothing draining).
+    cachedOnHand: ledger.consumptionPaused ? 0 : ledger.onHand,
     cachedIncomingCount: ledger.incomingCount,
     cachedRatePerDay: rate,
     forecastCachedAt: now,
