@@ -198,7 +198,11 @@ export function GroupListItem({
             <span className="w-2 h-2 rounded-full bg-on-track shadow-[0_0_0_3px] shadow-on-track/20 flex-shrink-0" />
             <span className="truncate">
               {ledger.consumptionPaused || openMembers.length === 0 ? (
-                <span className="text-text-muted">{takingLabel}</span>
+                <span className="text-text-muted">
+                  {ledger.consumptionPaused
+                    ? "No bottle on the counter — consumption paused."
+                    : "No bottle open yet"}
+                </span>
               ) : (
                 <span>
                   Now taking{" "}
