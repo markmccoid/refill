@@ -107,6 +107,8 @@ export function NutrientBar({
               <Link
                 key={i}
                 href={`/supplements/${src.supplementId}`}
+                target="_blank"
+                rel="noopener noreferrer"
                 className="group inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-text/5 hover:bg-primary-light text-[11px] transition-colors"
                 title={`${src.supplementName}: ${Math.round(src.dvPercent)}% DV${
                   src.amount > 0 && src.unit

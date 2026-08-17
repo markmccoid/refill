@@ -44,6 +44,8 @@ export const summary = query({
     const perPersonSupplement: {
       personId: string;
       supplementId: string;
+      /** True when supplementId is a group id (no supplement detail route). */
+      isGroup: boolean;
       name: string;
       pillsPerWeek: number;
       costPerPill: number;
@@ -91,6 +93,7 @@ export const summary = query({
         perPersonSupplement.push({
           personId: d.personId,
           supplementId: s._id,
+          isGroup: false,
           name: s.name,
           pillsPerWeek,
           costPerPill: openCostPerPill,
@@ -160,6 +163,7 @@ export const summary = query({
         perPersonSupplement.push({
           personId,
           supplementId: g._id,
+          isGroup: true,
           name: g.name,
           pillsPerWeek: weekly,
           costPerPill: openCostPerPill,

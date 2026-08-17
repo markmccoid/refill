@@ -65,6 +65,8 @@ export function PersonDetail({ person }: { person: PersonNutrients }) {
                   {n.sourceId ? (
                     <Link
                       href={`/supplements/${n.sourceId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
                       className="ml-2 text-text-muted text-xs hover:text-primary hover:underline"
                     >
                       {n.source} ↗
