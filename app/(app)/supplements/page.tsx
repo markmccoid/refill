@@ -15,9 +15,22 @@ import {
 } from "@/components/GroupListItem";
 import { CreateGroupDialog } from "@/components/CreateGroupDialog";
 import { Doc, Id } from "@/convex/_generated/dataModel";
-import type { BottleLike, SupplementStatus } from "@/lib/supplement-utils";
+import {
+  getSpendRatePerDay,
+  type BottleLike,
+  type SupplementStatus,
+} from "@/lib/supplement-utils";
 
 type Filter = "all" | "attention" | "groups";
+
+type Sort = "runsOut" | "cost" | "usage" | "name";
+
+const SORT_OPTIONS: { id: Sort; label: string }[] = [
+  { id: "runsOut", label: "Runs out soonest" },
+  { id: "cost", label: "Cost — highest first" },
+  { id: "usage", label: "Pills / month — most first" },
+  { id: "name", label: "Name — A to Z" },
+];
 
 type SupplementRow = Doc<"supplements"> & {
   consumptionRate: number;
@@ -35,26 +48,62 @@ type GroupRow = Doc<"groups"> & {
   takers: { personId: Id<"people">; pillsPerWeek: number }[];
 };
 
-type Subject =
-  | {
-      kind: "supplement";
-      id: Id<"supplements">;
-      daysLeft: number;
-      status: SupplementStatus;
-      searchText: string;
-      supplement: SupplementRow;
-    }
-  | {
-      kind: "group";
-      id: Id<"groups">;
-      daysLeft: number;
-      status: SupplementStatus;
-      searchText: string;
-      group: GroupRow;
-    };
+type SubjectBase = {
+  name: string;
+  daysLeft: number;
+  status: SupplementStatus;
+  searchText: string;
+  /** Estimated spend per 30 days at the current dosage. */
+  monthlySpend: number;
+  /** Pills consumed per 30 days at the current dosage. */
+  pillsPerMonth: number;
+};
+
+type Subject = SubjectBase &
+  (
+    | {
+        kind: "supplement";
+        id: Id<"supplements">;
+        supplement: SupplementRow;
+      }
+    | {
+        kind: "group";
+        id: Id<"groups">;
+        group: GroupRow;
+      }
+  );
 
 function isAttention(status: SupplementStatus) {
   return status === "critical" || status === "low";
+}
+
+function byName(a: Subject, b: Subject) {
+  return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+}
+
+/** Nothing being consumed ⇒ infinite days left, which always sorts last. */
+function byDaysLeft(a: Subject, b: Subject) {
+  const aInf = !Number.isFinite(a.daysLeft);
+  const bInf = !Number.isFinite(b.daysLeft);
+  if (aInf || bInf) {
+    if (aInf && bInf) return byName(a, b);
+    return aInf ? 1 : -1;
+  }
+  if (a.daysLeft !== b.daysLeft) return a.daysLeft - b.daysLeft;
+  return byName(a, b);
+}
+
+function compareSubjects(sort: Sort) {
+  return (a: Subject, b: Subject) => {
+    if (sort === "name") return byName(a, b);
+    if (sort === "cost") {
+      return b.monthlySpend - a.monthlySpend || byName(a, b);
+    }
+    if (sort === "usage") {
+      return b.pillsPerMonth - a.pillsPerMonth || byName(a, b);
+    }
+    return byDaysLeft(a, b);
+  };
 }
 
 export default function SupplementsPage() {
@@ -72,6 +121,7 @@ export default function SupplementsPage() {
   const [creating, setCreating] = useState(false);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
+  const [sort, setSort] = useState<Sort>("runsOut");
   const [restocked, setRestocked] = useState<Set<string>>(new Set());
 
   const supplements = inventory?.solos;
@@ -82,39 +132,38 @@ export default function SupplementsPage() {
     const list: Subject[] = [];
 
     for (const s of supplements) {
-      const { daysLeft, status } = getSupplementListMetrics(s);
+      const { daysLeft, status, ledger, rate } = getSupplementListMetrics(s);
       list.push({
         kind: "supplement",
         id: s._id,
+        name: s.name,
         daysLeft,
         status,
+        monthlySpend: getSpendRatePerDay(rate, ledger.openCostPerPill) * 30,
+        pillsPerMonth: rate * 30,
         searchText: [s.name, s.brand, s.form].filter(Boolean).join(" ").toLowerCase(),
         supplement: s,
       });
     }
     for (const g of groups) {
-      const { daysLeft, status } = getGroupListMetrics(g);
+      const { daysLeft, status, ledger } = getGroupListMetrics(g);
       const memberText = g.members
         .map((m) => [m.supplement.name, m.supplement.brand].filter(Boolean).join(" "))
         .join(" ");
       list.push({
         kind: "group",
         id: g._id,
+        name: g.name,
         daysLeft,
         status,
+        monthlySpend:
+          getSpendRatePerDay(g.consumptionRate, ledger.openCostPerPill) * 30,
+        pillsPerMonth: g.consumptionRate * 30,
         searchText: `${g.name} ${memberText}`.toLowerCase(),
         group: g,
       });
     }
 
-    list.sort((a, b) => {
-      const aInf = !Number.isFinite(a.daysLeft);
-      const bInf = !Number.isFinite(b.daysLeft);
-      if (aInf && bInf) return 0;
-      if (aInf) return 1;
-      if (bInf) return -1;
-      return a.daysLeft - b.daysLeft;
-    });
     return list;
   }, [supplements, groups]);
 
@@ -127,12 +176,14 @@ export default function SupplementsPage() {
   const attentionCount = subjects.filter((s) => isAttention(s.status)).length;
   const q = search.trim().toLowerCase();
 
-  const filtered = subjects.filter((s) => {
-    if (filter === "attention" && !isAttention(s.status)) return false;
-    if (filter === "groups" && s.kind !== "group") return false;
-    if (q && !s.searchText.includes(q)) return false;
-    return true;
-  });
+  const filtered = subjects
+    .filter((s) => {
+      if (filter === "attention" && !isAttention(s.status)) return false;
+      if (filter === "groups" && s.kind !== "group") return false;
+      if (q && !s.searchText.includes(q)) return false;
+      return true;
+    })
+    .sort(compareSubjects(sort));
 
   const needsAttention = filtered.filter((s) => isAttention(s.status));
   const onTrack = filtered.filter((s) => !isAttention(s.status));
@@ -206,6 +257,23 @@ export default function SupplementsPage() {
             placeholder="Search supplements & brands…"
             className="flex-1 bg-transparent border-0 outline-none text-sm min-h-0 p-0 focus:ring-0"
           />
+        </label>
+        <label className="flex items-center gap-2 bg-surface border border-border-strong rounded-lg px-3 py-2 flex-shrink-0">
+          <span className="text-text-muted text-xs font-semibold uppercase tracking-wide">
+            Sort
+          </span>
+          <select
+            value={sort}
+            onChange={(e) => setSort(e.target.value as Sort)}
+            className="bg-surface text-text border-0 outline-none text-sm min-h-0 p-0 pr-1 focus:ring-0 cursor-pointer"
+            aria-label="Sort supplements"
+          >
+            {SORT_OPTIONS.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.label}
+              </option>
+            ))}
+          </select>
         </label>
         <div className="flex gap-1.5 flex-wrap">
           {(
