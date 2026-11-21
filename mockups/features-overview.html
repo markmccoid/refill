@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refill — Feature Tour</title>
+<style>
+  /* ---------------------------------------------------------------------------
+     Design tokens lifted from app/globals.css (light + dark)
+  --------------------------------------------------------------------------- */
+  :root {
+    --c-bg: rgb(241 244 240);
+    --c-surface: rgb(255 255 255);
+    --c-surface-alt: rgb(251 252 251);
+    --c-text: rgb(28 38 32);
+    --c-muted: rgb(94 107 99);
+    --c-faint: rgb(138 149 142);
+    --c-primary: rgb(46 125 91);
+    --c-primary-dark: rgb(31 92 65);
+    --c-primary-light: rgb(234 242 236);
+    --c-critical: rgb(192 73 47);
+    --c-critical-light: rgb(248 232 227);
+    --c-low: rgb(176 125 24);
+    --c-low-light: rgb(247 239 218);
+    --c-on-track: rgb(46 125 91);
+    --c-on-track-light: rgb(231 241 234);
+    --c-stocked: rgb(31 92 65);
+    --c-stocked-light: rgb(226 236 230);
+    --border: rgba(20, 40, 30, 0.07);
+    --border-strong: rgba(20, 40, 30, 0.13);
+    --shadow-card: 0 6px 24px -10px rgba(20, 40, 30, 0.18);
+  }
+  html.dark {
+    --c-bg: rgb(16 21 18);
+    --c-surface: rgb(26 33 29);
+    --c-surface-alt: rgb(35 43 38);
+    --c-text: rgb(230 235 231);
+    --c-muted: rgb(163 176 168);
+    --c-faint: rgb(120 132 124);
+    --c-primary: rgb(69 168 125);
+    --c-primary-dark: rgb(87 181 140);
+    --c-primary-light: rgb(34 53 43);
+    --c-critical: rgb(229 115 90);
+    --c-critical-light: rgb(58 34 28);
+    --c-low: rgb(217 167 66);
+    --c-low-light: rgb(54 44 20);
+    --c-on-track: rgb(69 168 125);
+    --c-on-track-light: rgb(33 51 42);
+    --c-stocked: rgb(110 201 160);
+    --c-stocked-light: rgb(28 47 38);
+    --border: rgba(230, 245, 238, 0.09);
+    --border-strong: rgba(230, 245, 238, 0.17);
+    --shadow-card: 0 6px 24px -10px rgba(0, 0, 0, 0.55);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--c-bg);
+    color: var(--c-text);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 48px 28px 96px; }
+
+  /* Header */
+  header.top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+  h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.02em; }
+  .tagline { color: var(--c-muted); max-width: 640px; margin-top: 8px; }
+  .theme-btn {
+    flex-shrink: 0; border: 1px solid var(--border-strong); background: var(--c-surface);
+    color: var(--c-muted); border-radius: 10px; padding: 8px 14px; cursor: pointer; font-size: 13px;
+  }
+  .theme-btn:hover { color: var(--c-primary); }
+
+  nav.toc {
+    display: flex; flex-wrap: wrap; gap: 8px; margin: 32px 0 8px;
+  }
+  nav.toc a {
+    font-size: 13px; text-decoration: none; color: var(--c-muted);
+    background: var(--c-surface); border: 1px solid var(--border-strong);
+    padding: 6px 12px; border-radius: 999px;
+  }
+  nav.toc a:hover { color: var(--c-primary); border-color: var(--c-primary); }
+
+  section { margin-top: 56px; scroll-margin-top: 24px; }
+  .kicker {
+    font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--c-primary); font-weight: 600; margin-bottom: 6px;
+  }
+  h2 { font-size: 1.45rem; letter-spacing: -0.01em; margin-bottom: 6px; }
+  .lede { color: var(--c-muted); max-width: 720px; margin-bottom: 22px; }
+
+  .card {
+    background: var(--c-surface); border: 1px solid var(--border-strong);
+    border-radius: 14px; box-shadow: var(--shadow-card); padding: 22px;
+  }
+  .grid { display: grid; gap: 16px; }
+  .g3 { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+  .g2 { grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); }
+
+  .card h3 { font-size: 15px; font-weight: 650; display: flex; align-items: center; gap: 8px; }
+  .card p { font-size: 13.5px; color: var(--c-muted); margin-top: 8px; }
+  .card ul { list-style: none; margin-top: 10px; }
+  .card li { font-size: 13.5px; color: var(--c-muted); padding-left: 18px; position: relative; margin-top: 5px; }
+  .card li::before { content: ""; position: absolute; left: 4px; top: 9px; width: 5px; height: 5px; border-radius: 50%; background: var(--c-primary); opacity: .7; }
+  code {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px; background: var(--c-primary-light); color: var(--c-primary-dark);
+    padding: 1.5px 6px; border-radius: 6px;
+  }
+  html.dark code { color: var(--c-primary); }
+
+  /* Status pills */
+  .pill { display: inline-block; font-size: 11.5px; font-weight: 600; padding: 3px 10px; border-radius: 999px; }
+  .p-critical { background: var(--c-critical-light); color: var(--c-critical); }
+  .p-low      { background: var(--c-low-light);      color: var(--c-low); }
+  .p-ontrack  { background: var(--c-on-track-light); color: var(--c-on-track); }
+  .p-stocked  { background: var(--c-stocked-light);  color: var(--c-stocked); }
+
+  /* Hero demo strip: pill jars */
+  .hero-strip {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 14px; margin-top: 36px;
+  }
+  .jar {
+    background: var(--c-surface); border: 1px solid var(--border-strong); border-radius: 14px;
+    box-shadow: var(--shadow-card); padding: 14px; text-align: center;
+  }
+  .jar-visual {
+    height: 74px; margin: 0 auto 10px; width: 56px; border-radius: 10px;
+    border: 2px solid var(--border-strong); overflow: hidden; position: relative;
+    display: flex; flex-direction: column-reverse; background: var(--c-surface-alt);
+  }
+  .jar-fill { width: 100%; }
+  .jar-name { font-size: 12.5px; font-weight: 650; }
+  .jar-meta { font-size: 11px; color: var(--c-faint); margin-top: 2px; }
+  .jar .pill { margin-top: 7px; }
+
+  /* Flow diagram (restock) */
+  .flow { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
+  .flow-step {
+    flex: 1 1 160px; background: var(--c-surface); border: 1px solid var(--border-strong);
+    border-radius: 12px; padding: 14px 16px; box-shadow: var(--shadow-card);
+  }
+  .flow-step b { font-size: 13px; display: block; }
+  .flow-step span { font-size: 12px; color: var(--c-muted); display: block; margin-top: 4px; }
+  .flow-arrow {
+    align-self: center; padding: 0 10px; color: var(--c-faint); font-size: 18px; user-select: none;
+  }
+
+  /* Seam map */
+  table.seams { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 4px; }
+  table.seams th {
+    text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--c-faint); padding: 8px 12px; border-bottom: 1px solid var(--border-strong);
+  }
+  table.seams td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; color: var(--c-muted); }
+  table.seams td:first-child { color: var(--c-text); font-weight: 600; white-space: nowrap; }
+
+  footer { margin-top: 80px; padding-top: 20px; border-top: 1px solid var(--border-strong); color: var(--c-faint); font-size: 12.5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div>
+      <div class="kicker">Feature Tour · Household Supplement Tracker</div>
+      <h1>🧴 Refill</h1>
+      <p class="tagline">
+        What supplements the household takes, how many pills are on hand, when each will run out,
+        and what the habit costs — synced in real time between household members via Convex.
+        Pill counts deplete automatically from an anchored snapshot; there is no scheduled job.
+      </p>
+    </div>
+    <button class="theme-btn" onclick="document.documentElement.classList.toggle('dark')">◐ Theme</button>
+  </header>
+
+  <nav class="toc">
+    <a href="#inventory">Inventory &amp; FIFO</a>
+    <a href="#groups">Groups</a>
+    <a href="#restock">Restock Planner</a>
+    <a href="#people">People &amp; Dosages</a>
+    <a href="#costs">Costs &amp; Spend</a>
+    <a href="#insights">Insights</a>
+    <a href="#seams">Code Seams</a>
+  </nav>
+
+  <!-- Hero demo -->
+  <div class="hero-strip" id="inventory">
+    <div class="jar">
+      <div class="jar-visual"><div class="jar-fill" style="height:12%;background:var(--c-critical)"></div></div>
+      <div class="jar-name">Vitamin D3</div>
+      <div class="jar-meta">6 pills left · ~2 days</div>
+      <span class="pill p-critical">Critical</span>
+    </div>
+    <div class="jar">
+      <div class="jar-visual"><div class="jar-fill" style="height:30%;background:var(--c-low)"></div></div>
+      <div class="jar-name">Magnesium</div>
+      <div class="jar-meta">42 pills left · ~21 days</div>
+      <span class="pill p-low">Low</span>
+    </div>
+    <div class="jar">
+      <div class="jar-visual"><div class="jar-fill" style="height:62%;background:var(--c-on-track)"></div></div>
+      <div class="jar-name">Omega-3</div>
+      <div class="jar-meta">180 pills left · ~90 days</div>
+      <span class="pill p-ontrack">On track</span>
+    </div>
+    <div class="jar">
+      <div class="jar-visual"><div class="jar-fill" style="height:88%;background:var(--c-stocked)"></div></div>
+      <div class="jar-name">Fish Oil Group</div>
+      <div class="jar-meta">2 brands queued · ~140 days</div>
+      <span class="pill p-stocked">Stocked</span>
+    </div>
+  </div>
+
+  <!-- Core model -->
+  <section>
+    <div class="kicker">01 · The core idea</div>
+    <h2>Computed inventory, never stored counts</h2>
+    <p class="lede">
+      Nothing ticks a "remaining pills" counter in the background. Each supplement stores a
+      <strong>quantity anchor</strong> — an on-hand snapshot and timestamp — and current counts are
+      derived by subtracting consumption since then, oldest bottle first (<code>docs/adr/0001</code>).
+    </p>
+    <div class="grid g3">
+      <div class="card">
+        <h3>⚓ Quantity anchor</h3>
+        <p>The stored truth: pills on hand at a moment, distributed across bottles oldest-first. Any real-world change — recount, dosage edit, new bottle, taker added — triggers a <strong>re-anchor</strong>, so new rates apply only going forward.</p>
+      </div>
+      <div class="card">
+        <h3>🍾 Bottle ledger</h3>
+        <p>Each bottle is its own row with label count and price paid. The <strong>open bottle</strong> is the oldest not yet drained; sealed spares queue behind it. When it empties, the next auto-rolls open — FIFO falls out of the math, nothing to trigger.</p>
+      </div>
+      <div class="card">
+        <h3>📉 Run-out forecast</h3>
+        <p><code>daysLeft = on hand ÷ rate</code>, where rate is Σ(takers' pills-per-week) ÷ 7. Thresholds drive the status pills above: critical ≤ 7 days, low ≤ 25, on-track ≤ 60, stocked beyond.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Groups -->
+  <section id="groups">
+    <div class="kicker">02 · Interchangeable brands</div>
+    <h2>Groups: pooled FIFO or manual-open</h2>
+    <p class="lede">
+      A <strong>Group</strong> links ≥2 interchangeable brands that fill the same role ("Fish Oil").
+      It owns one combined forecast, cost roll-up, per-person dosage, and drain queue — and
+      auto-dissolves back to a solo supplement if unlinked down to one member.
+    </p>
+    <div class="grid g2">
+      <div class="card">
+        <h3>⏭️ Default: group queue (pooled FIFO)</h3>
+        <ul>
+          <li>All bottles across brands drain oldest-purchase-first, currently-open at the front.</li>
+          <li>A newly bought bottle lands <em>by purchase date</em> — newest at the back, even of an earlier brand.</li>
+          <li>Dosage is set once per person on the group; a brand may carry a per-brand override for half-strength products (making the rate piecewise).</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>🖐️ Opt-in: manual-open (ADR-0010)</h3>
+        <ul>
+          <li>User marks bottles "on the counter"; the dosage splits equally across activated bottles.</li>
+          <li>Unpinned bottles freeze; the next enters rotation only when activated — no auto-fill.</li>
+          <li>Solo supplements always stay single-bottle FIFO.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- Restock -->
+  <section id="restock">
+    <div class="kicker">03 · Purchasing</div>
+    <h2>The Restock Planner</h2>
+    <p class="lede">
+      One active worksheet per household, <strong>user-curated only</strong> — the run-out forecast orders
+      candidates and badges urgency, but never adds items itself. Persists until its items are purchased
+      or removed; no explicit start/end action (<code>docs/adr/0006</code>, <code>0009</code>).
+    </p>
+    <div class="flow">
+      <div class="flow-step"><b>1 · Pick subjects</b><span>Choose from supplements ordered by run-out; urgency highlighted within the forecast window (default 30 days).</span></div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step"><b>2 · Compare candidates</b><span>Durable product options per subject — retailer, URL, label, count. One candidate selected per item per cycle; $/pill comparison when count is known.</span></div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step"><b>3 · Retailer baskets</b><span>Derived grouping: subtotal, free-shipping threshold status, applied shipping, all-in total. Nudges flag the cheapest complete basket.</span></div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step"><b>4 · Mark as purchased</b><span>Per retailer order, with confirmation letting actuals differ from plan. Lands via match-or-add to a supplement; saved purchase links update automatically.</span></div>
+    </div>
+    <div class="grid g3" style="margin-top:16px">
+      <div class="card">
+        <h3>🎯 Coverage target</h3>
+        <p>Household knob (default 90 days) driving recommended quantity: enough bottles that on-hand covers the target at the current rate. Always editable before buying.</p>
+      </div>
+      <div class="card">
+        <h3>🔗 Saved links vs candidates</h3>
+        <p>A saved purchase link remembers where you'd rebuy a supplement at a retailer; it may seed candidates but never appears as a comparison option itself.</p>
+      </div>
+      <div class="card">
+        <h3>🔀 Substitutes welcome</h3>
+        <p>Candidates aren't locked to stocked brands. Buying a different brand creates a new supplement — with an offer (user decides) to form a group.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- People -->
+  <section id="people">
+    <div class="kicker">04 · Who takes what</div>
+    <h2>People, dosages &amp; pauses</h2>
+    <p class="lede">
+      Each person takes supplements at <strong>pills per week</strong> — typed per-day, per-week, or by weekday,
+      all reducing to a weekly total. Consumption rate is a smooth daily average, not tied to weekdays.
+    </p>
+    <div class="grid g3">
+      <div class="card">
+        <h3>⏸️ Pause &amp; resume</h3>
+        <p>A dosage can be paused (optionally until a date) without deleting it. Paused dosages stay visible but drop out of rate, forecasts, and costs (<code>docs/adr/0008</code>). Dosage events record baseline / change / pause / resume history.</p>
+      </div>
+      <div class="card">
+        <h3>🧑 Disable vs delete</h3>
+        <p>Disabling a person soft-pauses their whole regimen — reversible, blast radius zero. Deleting fronts a confirm offering Disable instead (<code>docs/adr/0003</code>). Each person's page expands into their full regimen for inline edits.</p>
+      </div>
+      <div class="card">
+        <h3>🎨 Household-scoped data</h3>
+        <p>Everything lives under one household (e.g. "Mark &amp; Lori") with real auth and membership checks via <code>convex/authz.ts</code>. Convex queries push changes to every signed-in member instantly.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Costs -->
+  <section id="costs">
+    <div class="kicker">05 · Money</div>
+    <h2>Spend rate vs lifetime spent</h2>
+    <div class="grid g2">
+      <div class="card">
+        <h3>💸 Spend rate — forward-looking</h3>
+        <p>Consumption rate × cost-per-pill of the <em>currently open</em> bottle, shown per person and rolled up per household in day / week / month windows. Steps up as each pricier bottle rolls open (FIFO cost, <code>docs/adr/0002</code>).</p>
+      </div>
+      <div class="card">
+        <h3>🧾 Lifetime spent — historical</h3>
+        <p>The sum of bottle prices ever logged — money actually paid, including bottles now empty. Attributable per person via dosage share. Insights labels historical intake as <em>estimated planned intake</em>, never claiming reconstructed consumption cost.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Insights -->
+  <section id="insights">
+    <div class="kicker">06 · Planning hub</div>
+    <h2>Insights reports</h2>
+    <p class="lede">
+      Opens on KPI cards with <strong>no report pre-selected</strong>. Reports share consistent filters,
+      empty states, and caveats (<code>specs/insights-reports/</code>).
+    </p>
+    <div class="grid g3">
+      <div class="card"><h3>👤 Cost by person</h3><p>Current-rate cost allocated to each person by dosage share, drillable down to person × supplement detail rows.</p></div>
+      <div class="card"><h3>📅 Planned intake over time</h3><p>Estimated planned intake reconstructed from dosage-event history — explicitly labelled estimated, with a caveat banner.</p></div>
+      <div class="card"><h3>💊 Nutrients &amp; inventory</h3><p>Nutrient compare/detail from label facts (DSLD lookup), plus inventory/run-out reporting cards.</p></div>
+    </div>
+  </section>
+
+  <!-- Seams -->
+  <section id="seams">
+    <div class="kicker">07 · Under the hood</div>
+    <h2>Code seams</h2>
+    <p class="lede">Where the app splits so each concern has one owner:</p>
+    <div class="card" style="padding:6px 0 2px">
+      <table class="seams">
+        <tr><th>Seam</th><th>Owner(s)</th><th>Contract</th></tr>
+        <tr>
+          <td>Pure math</td>
+          <td class="mono">lib/supplement-utils.ts</td>
+          <td>Anchor → on-hand, rates, daysLeft, status, FIFO bottle walk. Works on Convex docs and form state alike via minimal structural types.</td>
+        </tr>
+        <tr>
+          <td>Basket math</td>
+          <td class="mono">lib/restock-basket-math.ts</td>
+          <td>Retailer grouping, subtotals, shipping application, all-in totals, nudge flags. Computed from items, never stored.</td>
+        </tr>
+        <tr>
+          <td>Candidates &amp; seeding</td>
+          <td class="mono">lib/candidate-*-utils.ts, convex/candidateProducts.ts, convex/candidateSeeding.ts</td>
+          <td>URL-deduped candidates per subject; migration rules on group form/dissolve; saved-link import previews.</td>
+        </tr>
+        <tr>
+          <td>Re-anchor fan-out</td>
+          <td class="mono">convex/consumption.ts</td>
+          <td>Single helper every mutating call routes through: classify dosages (person-active, paused), recompute anchor distribution, re-anchor affected groups/supplements.</td>
+        </tr>
+        <tr>
+          <td>Domain tables</td>
+          <td class="mono">convex/{supplements,bottles,dosages,groups,people,retailers,savedLinks}.ts</td>
+          <td>Typed queries/mutations per aggregate; mutations call the consumption seam rather than touching anchors directly.</td>
+        </tr>
+        <tr>
+          <td>Reporting</td>
+          <td class="mono">convex/{costs,insights}.ts</td>
+          <td>Read-only aggregations over the same primitives — spend roll-ups, per-person allocation matrix, nutrient facts.</td>
+        </tr>
+        <tr>
+          <td>UI layer</td>
+          <td class="mono">app/(app)/*, components/*</td>
+          <td>Pages per feature (dashboard, supplements, restock, people, costs, insights) composed from shared components; design tokens in <code>globals.css</code> drive light/dark theming.</td>
+        </tr>
+        <tr>
+          <td>Lookup services</td>
+          <td class="mono">app/api/{lookup,image-search,fetch-image}, convex/dsld.ts</td>
+          <td>Add-supplement paste-link flow fills optional product facts and images; failures degrade to manual entry.</td>
+        </tr>
+      </table>
+    </div>
+  </section>
+
+  <footer>
+    Generated from CONTEXT.md (domain glossary), DOCS.md (architecture), docs/adr/0001–0010, FUTURE_FEATURES.md, and specs/.
+    This static tour uses the app's own CSS variable tokens — toggle ◐ Theme for dark mode.
+  </footer>
+</div>
+</body>
+</html>
